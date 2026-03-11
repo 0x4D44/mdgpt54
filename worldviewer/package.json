@@ -1,7 +1,7 @@
 {
   "name": "worldviewer",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "maplibre-contour": "^0.1.0",
     "maplibre-gl": "^5.20.0"
   },
   "devDependencies": {

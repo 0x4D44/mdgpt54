@@ -1,4 +1,5 @@
 import "./style.css";
+import mlcontour from "maplibre-contour";
 import maplibregl, {
   type StyleSpecification,
   Map,
@@ -12,6 +13,17 @@ import {
   MAX_BROWSER_ZOOM,
   shouldUsePerformanceMode
 } from "./detailProfile";
+import {
+  CONTOUR_THRESHOLDS,
+  CONTOUR_SOURCE_ID,
+  RELIEF_DEM_SOURCE_ID,
+  RELIEF_LAYER_IDS,
+  TERRAIN_MESH_SOURCE_ID,
+  getHillshadeExaggerationExpression,
+  getSatelliteOpacity,
+  getTerrainExaggeration,
+  normalizeTerrainElevation
+} from "./reliefProfile";
 
 type Preset = {
   id: string;
@@ -34,9 +46,11 @@ type SearchResult = {
 type MapState = {
   terrainEnabled: boolean;
   buildingsEnabled: boolean;
+  reliefEnabled: boolean;
   autoSpinEnabled: boolean;
   userInteracting: boolean;
   stressModeActive: boolean;
+  terrainExaggeration: number;
   projectionMode: "globe" | "mercator";
 };
 
@@ -76,7 +90,10 @@ type StyleSpec = {
 const OPENFREEMAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 const SATELLITE_TILE_URL =
   "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg";
-const TERRAIN_SOURCE_URL = "https://demotiles.maplibre.org/terrain-tiles/tiles.json";
+const TERRAIN_TILE_TEMPLATE_URL =
+  "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png";
+const TERRAIN_ATTRIBUTION =
+  'Terrain Â© <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> / <a href="https://github.com/tilezen/joerd/blob/master/docs/formats.md#terrarium">Terrarium</a>';
 const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const MAX_SPIN_ZOOM = 4.8;
 const SLOW_SPIN_ZOOM = 2.8;
@@ -85,6 +102,9 @@ const MERCATOR_SWITCH_ZOOM = 6;
 const GLOBE_RETURN_ZOOM = 5;
 const BUILDING_LAYER_ID = "building-3d";
 const FLAT_BUILDING_LAYER_ID = "building";
+const HILLSHADE_LAYER_ID = "terrain-hillshade";
+const CONTOUR_LINE_LAYER_ID = "terrain-contours-line";
+const CONTOUR_LABEL_LAYER_ID = "terrain-contours-label";
 const LABEL_LAYER_IDS = [
   "label_other",
   "label_village",
@@ -220,6 +240,7 @@ app.innerHTML = `
         </div>
         <div class="toggle-grid">
           <button type="button" class="toggle-chip is-active" data-toggle="terrain">Terrain</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="relief">Relief</button>
           <button type="button" class="toggle-chip is-active" data-toggle="buildings">3D Buildings</button>
           <button type="button" class="toggle-chip is-active" data-toggle="spin">Orbit Spin</button>
         </div>
@@ -247,11 +268,15 @@ app.innerHTML = `
             <dt>Pitch</dt>
             <dd id="metric-pitch">--</dd>
           </div>
+          <div>
+            <dt>Terrain</dt>
+            <dd id="metric-terrain">--</dd>
+          </div>
         </dl>
       </section>
 
       <p class="credit-note">
-        Layers: OpenFreeMap, EOX Maps, MapLibre demo terrain, OpenStreetMap Nominatim.
+        Layers: OpenFreeMap, EOX Maps, AWS Terrain Tiles, OpenStreetMap Nominatim.
       </p>
     </aside>
 
@@ -269,15 +294,18 @@ const metricMode = document.querySelector<HTMLElement>("#metric-mode")!;
 const metricZoom = document.querySelector<HTMLElement>("#metric-zoom")!;
 const metricAltitude = document.querySelector<HTMLElement>("#metric-altitude")!;
 const metricPitch = document.querySelector<HTMLElement>("#metric-pitch")!;
+const metricTerrain = document.querySelector<HTMLElement>("#metric-terrain")!;
 const presetButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-preset]"));
 const toggleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-toggle]"));
 
 const mapState: MapState = {
   terrainEnabled: true,
   buildingsEnabled: true,
+  reliefEnabled: true,
   autoSpinEnabled: true,
   userInteracting: false,
   stressModeActive: false,
+  terrainExaggeration: getTerrainExaggeration(1.2),
   projectionMode: "globe"
 };
 
@@ -288,7 +316,17 @@ void bootstrap();
 
 async function bootstrap(): Promise<void> {
   try {
-    const style = await buildStyle();
+    const demSource = new mlcontour.DemSource({
+      url: TERRAIN_TILE_TEMPLATE_URL,
+      encoding: "terrarium",
+      maxzoom: 15,
+      worker: true,
+      cacheSize: 128,
+      timeoutMs: 12000
+    });
+    demSource.setupMaplibre(maplibregl);
+
+    const style = await buildStyle(demSource);
     map = createMap(style);
     wireMap(map);
     wireSearch();
@@ -301,7 +339,7 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-async function buildStyle(): Promise<StyleSpecification> {
+async function buildStyle(demSource: InstanceType<typeof mlcontour.DemSource>): Promise<StyleSpecification> {
   const response = await fetch(OPENFREEMAP_STYLE_URL);
   if (!response.ok) {
     throw new Error(`Style request failed with ${response.status}.`);
@@ -317,12 +355,34 @@ async function buildStyle(): Promise<StyleSpecification> {
       maxzoom: 17,
       attribution: 'Imagery © <a href="https://maps.eox.at/">EOX Maps</a>'
     },
-    terrainSource: {
+    [TERRAIN_MESH_SOURCE_ID]: {
       type: "raster-dem",
-      url: TERRAIN_SOURCE_URL,
+      tiles: [demSource.sharedDemProtocolUrl],
+      encoding: "terrarium",
       tileSize: 256,
-      maxzoom: 12,
-      attribution: 'Terrain © <a href="https://maplibre.org/">MapLibre</a>'
+      maxzoom: 15,
+      attribution: TERRAIN_ATTRIBUTION
+    },
+    [RELIEF_DEM_SOURCE_ID]: {
+      type: "raster-dem",
+      tiles: [demSource.sharedDemProtocolUrl],
+      encoding: "terrarium",
+      tileSize: 256,
+      maxzoom: 15,
+      attribution: TERRAIN_ATTRIBUTION
+    },
+    [CONTOUR_SOURCE_ID]: {
+      type: "vector",
+      tiles: [
+        demSource.contourProtocolUrl({
+          thresholds: CONTOUR_THRESHOLDS,
+          contourLayer: "contours",
+          elevationKey: "ele",
+          levelKey: "level"
+        })
+      ],
+      maxzoom: 15,
+      attribution: 'Contours via <a href="https://github.com/onthegomap/maplibre-contour">maplibre-contour</a>'
     }
   };
 
@@ -342,7 +402,7 @@ async function buildStyle(): Promise<StyleSpecification> {
     if (nextLayer.id === "background") {
       nextLayer.paint = {
         ...(nextLayer.paint ?? {}),
-        "background-color": "rgba(0, 0, 0, 0)"
+        "background-color": "#050b14"
       };
     }
 
@@ -411,29 +471,98 @@ async function buildStyle(): Promise<StyleSpecification> {
     source: "satellite",
     maxzoom: 17,
     paint: {
-      "raster-saturation": -0.08,
-      "raster-contrast": 0.1,
-      "raster-opacity": [
+      "raster-saturation": -0.28,
+      "raster-contrast": 0.24,
+      "raster-brightness-min": 0.05,
+      "raster-brightness-max": 0.88,
+      "raster-opacity": getSatelliteOpacity(1.2, 0, mapState.reliefEnabled)
+    }
+  };
+
+  const hillshadeLayer: StyleLayer = {
+    id: HILLSHADE_LAYER_ID,
+    type: "hillshade",
+    source: RELIEF_DEM_SOURCE_ID,
+    minzoom: 6,
+    paint: {
+      "hillshade-exaggeration": getHillshadeExaggerationExpression(),
+      "hillshade-shadow-color": "rgba(10, 16, 24, 0.7)",
+      "hillshade-highlight-color": "rgba(255, 244, 214, 0.52)",
+      "hillshade-accent-color": "rgba(255, 255, 255, 0.24)",
+      "hillshade-illumination-direction": 315,
+      "hillshade-illumination-anchor": "viewport"
+    }
+  };
+
+  const contourLineLayer: StyleLayer = {
+    id: CONTOUR_LINE_LAYER_ID,
+    type: "line",
+    source: CONTOUR_SOURCE_ID,
+    "source-layer": "contours",
+    minzoom: 9.5,
+    layout: {
+      "line-join": "round"
+    },
+    paint: {
+      "line-color": [
+        "case",
+        ["==", ["get", "level"], 1],
+        "rgba(255, 245, 210, 0.72)",
+        "rgba(255, 255, 255, 0.32)"
+      ],
+      "line-opacity": [
+        "case",
+        ["==", ["get", "level"], 1],
+        0.85,
+        0.42
+      ],
+      "line-width": [
         "interpolate",
         ["linear"],
         ["zoom"],
-        0,
-        1,
-        8,
-        1,
-        13,
-        0.92,
-        17,
-        0.82
+        9.5,
+        0.55,
+        12,
+        0.9,
+        14,
+        1.4
       ]
+    }
+  };
+
+  const contourLabelLayer: StyleLayer = {
+    id: CONTOUR_LABEL_LAYER_ID,
+    type: "symbol",
+    source: CONTOUR_SOURCE_ID,
+    "source-layer": "contours",
+    minzoom: 10.8,
+    filter: ["==", ["get", "level"], 1],
+    layout: {
+      "symbol-placement": "line",
+      "text-field": ["concat", ["to-string", ["get", "ele"]], " m"],
+      "text-font": ["Noto Sans Regular"],
+      "text-size": 10.5
+    },
+    paint: {
+      "text-color": "rgba(255,248,224,0.84)",
+      "text-halo-color": "rgba(13, 17, 24, 0.82)",
+      "text-halo-width": 1.1
     }
   };
 
   const layers = [
     transformedLayers[0],
     satelliteLayer,
+    hillshadeLayer,
     ...transformedLayers.slice(1)
   ];
+
+  const contourInsertIndex = layers.findIndex((layer) => layer.id === "road_area_pattern");
+  if (contourInsertIndex >= 0) {
+    layers.splice(contourInsertIndex, 0, contourLineLayer, contourLabelLayer);
+  } else {
+    layers.push(contourLineLayer, contourLabelLayer);
+  }
 
   return {
     ...baseStyle,
@@ -441,8 +570,8 @@ async function buildStyle(): Promise<StyleSpecification> {
     sources,
     layers,
     terrain: {
-      source: "terrainSource",
-      exaggeration: 1.2
+      source: TERRAIN_MESH_SOURCE_ID,
+      exaggeration: mapState.terrainExaggeration
     }
   } as unknown as StyleSpecification;
 }
@@ -639,11 +768,16 @@ function wireToggles(): void {
       switch (toggle) {
         case "terrain":
           mapState.terrainEnabled = !mapState.terrainEnabled;
-          mapInstance.setTerrain(
-            mapState.terrainEnabled ? { source: "terrainSource", exaggeration: 1.2 } : null
-          );
+          mapInstance.setTerrain(mapState.terrainEnabled ? currentTerrainOptions(mapInstance) : null);
           button.classList.toggle("is-active", mapState.terrainEnabled);
           statusPill.textContent = mapState.terrainEnabled ? "Terrain enabled." : "Terrain flattened.";
+          syncViewState(mapInstance);
+          break;
+        case "relief":
+          mapState.reliefEnabled = !mapState.reliefEnabled;
+          setReliefVisibility(mapInstance, mapState.reliefEnabled);
+          button.classList.toggle("is-active", mapState.reliefEnabled);
+          statusPill.textContent = mapState.reliefEnabled ? "Relief overlay enabled." : "Relief overlay hidden.";
           break;
         case "buildings":
           mapState.buildingsEnabled = !mapState.buildingsEnabled;
@@ -651,6 +785,7 @@ function wireToggles(): void {
           setLayerVisibility(mapInstance, FLAT_BUILDING_LAYER_ID, mapState.buildingsEnabled);
           button.classList.toggle("is-active", mapState.buildingsEnabled);
           statusPill.textContent = mapState.buildingsEnabled ? "3D buildings enabled." : "Buildings hidden.";
+          syncViewState(mapInstance);
           break;
         case "spin":
           mapState.autoSpinEnabled = !mapState.autoSpinEnabled;
@@ -785,17 +920,44 @@ function syncMetrics(mapInstance: Map): void {
   const zoom = mapInstance.getZoom();
   const pitch = mapInstance.getPitch();
   const altitude = calculateApproxAltitude(mapInstance);
+  const terrainHeight = getTerrainHeight(mapInstance);
 
   metricZoom.textContent = zoom.toFixed(2);
   metricPitch.textContent = `${pitch.toFixed(0)}°`;
   metricAltitude.textContent = formatDistance(altitude);
+  metricTerrain.textContent = formatElevation(terrainHeight, mapState.terrainEnabled);
   metricMode.textContent = classifyView(zoom);
 }
 
 function syncViewState(mapInstance: Map): void {
+  updateTerrainModel(mapInstance);
   updateProjectionMode(mapInstance);
   updateDetailProfile(mapInstance);
+  updateSatelliteOpacity(mapInstance);
   syncMetrics(mapInstance);
+}
+
+function updateTerrainModel(mapInstance: Map): void {
+  if (!mapState.terrainEnabled) {
+    return;
+  }
+
+  const nextExaggeration = getTerrainExaggeration(mapInstance.getZoom());
+  if (Math.abs(nextExaggeration - mapState.terrainExaggeration) < 0.01) {
+    return;
+  }
+
+  mapState.terrainExaggeration = nextExaggeration;
+  mapInstance.setTerrain(currentTerrainOptions(mapInstance));
+}
+
+function currentTerrainOptions(mapInstance: Map): { source: string; exaggeration: number } {
+  const exaggeration = getTerrainExaggeration(mapInstance.getZoom());
+  mapState.terrainExaggeration = exaggeration;
+  return {
+    source: TERRAIN_MESH_SOURCE_ID,
+    exaggeration
+  };
 }
 
 function updateProjectionMode(mapInstance: Map): void {
@@ -841,10 +1003,44 @@ function updateDetailProfile(mapInstance: Map): void {
   statusPill.textContent = "Open-data globe active.";
 }
 
+function setReliefVisibility(mapInstance: Map, visible: boolean): void {
+  RELIEF_LAYER_IDS.forEach((layerId) => {
+    setLayerVisibility(mapInstance, layerId, visible);
+  });
+
+  updateSatelliteOpacity(mapInstance);
+}
+
+function updateSatelliteOpacity(mapInstance: Map): void {
+  if (!mapInstance.getLayer("satellite-imagery")) {
+    return;
+  }
+
+  mapInstance.setPaintProperty(
+    "satellite-imagery",
+    "raster-opacity",
+    getSatelliteOpacity(mapInstance.getZoom(), mapInstance.getPitch(), mapState.reliefEnabled)
+  );
+}
+
 function calculateApproxAltitude(mapInstance: Map): number {
   const latitude = mapInstance.getCenter().lat * (Math.PI / 180);
   const metersPerPixel = (156543.03392 * Math.cos(latitude)) / Math.pow(2, mapInstance.getZoom());
   return metersPerPixel * (window.innerHeight / 2);
+}
+
+function getTerrainHeight(mapInstance: Map): number | null {
+  if (!mapState.terrainEnabled) {
+    return null;
+  }
+
+  const exaggeratedHeight = mapInstance.queryTerrainElevation(mapInstance.getCenter());
+  if (exaggeratedHeight === null) {
+    return null;
+  }
+
+  const exaggeration = mapInstance.getTerrain()?.exaggeration ?? 1;
+  return normalizeTerrainElevation(exaggeratedHeight, exaggeration);
 }
 
 function classifyView(zoom: number): string {
@@ -950,6 +1146,18 @@ function prettifyLayerName(layerId: string): string {
 function formatDistance(meters: number): string {
   if (meters >= 1000) {
     return `${(meters / 1000).toFixed(1)} km`;
+  }
+
+  return `${Math.round(meters)} m`;
+}
+
+function formatElevation(meters: number | null, terrainEnabled: boolean): string {
+  if (!terrainEnabled) {
+    return "Off";
+  }
+
+  if (meters === null) {
+    return "--";
   }
 
   return `${Math.round(meters)} m`;
