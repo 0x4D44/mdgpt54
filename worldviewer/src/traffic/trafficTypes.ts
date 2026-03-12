@@ -14,6 +14,7 @@ export type LiveTrack = {
   label: string | null;
   source: "opensky" | "aisstream";
   updatedAt: number;
+  onGround?: boolean | null;
   callsign?: string | null;
   flightCode?: string | null;
   aircraftCategory?: number | null;

@@ -7,6 +7,7 @@ const STATE_CALLSIGN = 1;
 const STATE_LONGITUDE = 5;
 const STATE_LATITUDE = 6;
 const STATE_BARO_ALTITUDE = 7;
+const STATE_ON_GROUND = 8;
 const STATE_VELOCITY = 9;
 const STATE_TRUE_TRACK = 10;
 const STATE_GEO_ALTITUDE = 13;
@@ -57,6 +58,7 @@ export function parseOpenSkyStates(data: unknown, now: number = Date.now()): Liv
       label: flightCode ?? callsign,
       source: "opensky",
       updatedAt: now,
+      onGround: typeof state[STATE_ON_GROUND] === "boolean" ? state[STATE_ON_GROUND] : null,
       callsign,
       flightCode,
       aircraftCategory: typeof state[STATE_CATEGORY] === "number" ? state[STATE_CATEGORY] : null,

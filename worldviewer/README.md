@@ -41,6 +41,7 @@ This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the firs
 - This is the realistic open-data version of the feature. It reaches street-scale navigation with terrain, roads, labels, and extruded buildings, but it is not worldwide photogrammetry.
 - Live traffic is intended for personal, non-commercial use and depends on public community feeds. Coverage and freshness vary by region and provider.
 - GitHub Pages can host the static globe build and live aircraft, because live aircraft and static aircraft identity both come from OpenSky-compatible browser/static paths. Live ships still need a relay, so the ship toggle stays unavailable on the Pages build.
+- At higher zoom and pitch, airborne aircraft switch from 2D symbols to bounded 3D class models in the browser. This only activates when the visible airborne aircraft count stays low enough to keep the map responsive.
 - The external services above are public community/demo services. For sustained production traffic, swap them for self-hosted or contracted equivalents.
 
 ## Credits

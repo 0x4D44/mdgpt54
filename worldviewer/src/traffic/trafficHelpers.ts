@@ -5,6 +5,7 @@ import { formatAircraftModelDescription } from "./aircraftIdentityData";
 export const STALE_THRESHOLD_MS = 60_000;
 export const MIN_LIVE_TRAFFIC_ZOOM = 5;
 const FLIGHT_CODE_CALLSIGN_RE = /^([A-Z]{3})(\d{1,4}[A-Z]?)$/;
+const EMPTY_TRACK_ID_SET = new Set<string>();
 const AIRCRAFT_CATEGORY_LABELS: Record<number, string> = {
   2: "Light",
   3: "Small",
@@ -58,7 +59,11 @@ export function trackOpacity(track: LiveTrack, now: number): number {
 }
 
 /** Convert an array of LiveTracks into a GeoJSON FeatureCollection for MapLibre. */
-export function tracksToGeoJSON(tracks: LiveTrack[], now: number): GeoJSON.FeatureCollection {
+export function tracksToGeoJSON(
+  tracks: LiveTrack[],
+  now: number,
+  hiddenTrackIds: ReadonlySet<string> = EMPTY_TRACK_ID_SET
+): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
     features: tracks.map((track) => ({
@@ -76,6 +81,7 @@ export function tracksToGeoJSON(tracks: LiveTrack[], now: number): GeoJSON.Featu
         label: track.label,
         source: track.source,
         updatedAt: track.updatedAt,
+        onGround: track.onGround ?? null,
         callsign: track.callsign ?? null,
         flightCode: track.flightCode ?? null,
         aircraftCategory: track.aircraftCategory ?? null,
@@ -87,7 +93,7 @@ export function tracksToGeoJSON(tracks: LiveTrack[], now: number): GeoJSON.Featu
         renderModelKey: track.renderModelKey ?? null,
         aircraftVisualCategory:
           track.kind === "aircraft" ? getAircraftVisualCategory(track.aircraftCategory ?? null) : null,
-        opacity: trackOpacity(track, now)
+        opacity: track.kind === "aircraft" && hiddenTrackIds.has(track.id) ? 0 : trackOpacity(track, now)
       }
     }))
   };

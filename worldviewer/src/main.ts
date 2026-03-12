@@ -26,6 +26,7 @@ import {
   normalizeTerrainElevation
 } from "./reliefProfile";
 import { TrafficClient } from "./traffic/trafficClient";
+import { Aircraft3dController } from "./traffic/aircraft3dLayer";
 import {
   addTrafficLayers,
   clearAircraftData,
@@ -41,7 +42,7 @@ import {
   updateTrafficStatus,
   type TrafficUIElements
 } from "./traffic/trafficUI";
-import type { SnapshotStatus, TrafficConnectionStatus } from "./traffic/trafficTypes";
+import type { SnapshotMessage, SnapshotStatus, TrafficConnectionStatus } from "./traffic/trafficTypes";
 
 type Preset = {
   id: string;
@@ -860,6 +861,30 @@ function wireTraffic(mapInstance: Map): void {
     aircraft: { code: "ok", message: null },
     ships: { code: "ok", message: null }
   };
+  let latestSnapshot: SnapshotMessage = {
+    type: "snapshot",
+    aircraft: [],
+    ships: [],
+    serverTime: Date.now(),
+    status: lastStatus
+  };
+  let aircraft3d: Aircraft3dController | null = null;
+
+  const refreshTrafficPresentation = () => {
+    if (!mapInstance.getSource("live-aircraft")) {
+      return;
+    }
+
+    updateTrafficData(mapInstance, latestSnapshot, aircraft3d?.getHiddenTrackIds());
+  };
+
+  const ensureAircraft3d = () => {
+    if (!aircraft3d) {
+      aircraft3d = new Aircraft3dController(mapInstance, refreshTrafficPresentation);
+    }
+
+    return aircraft3d;
+  };
 
   const syncUI = () => {
     updateTrafficStatus(ui, connectionStatus, client.state.aircraftEnabled, client.state.shipsEnabled);
@@ -875,8 +900,12 @@ function wireTraffic(mapInstance: Map): void {
 
   const client = new TrafficClient(mapInstance, {
     onSnapshot: (snapshot) => {
+      latestSnapshot = snapshot;
       lastStatus = snapshot.status;
-      updateTrafficData(mapInstance, snapshot);
+      if (mapInstance.getSource("live-aircraft")) {
+        ensureAircraft3d().setTracks(snapshot.aircraft);
+      }
+      updateTrafficData(mapInstance, snapshot, aircraft3d?.getHiddenTrackIds());
       updateLayerAvailability(ui, snapshot.status);
       updateLayerStatusHints(
         ui,
@@ -891,6 +920,7 @@ function wireTraffic(mapInstance: Map): void {
       if (snapshot.status.aircraft.code === "unavailable" && client.state.aircraftEnabled) {
         client.state.aircraftEnabled = false;
         ui.aircraftToggle.classList.remove("is-active");
+        aircraft3d?.setTracks([]);
         clearAircraftData(mapInstance);
         layersChanged = true;
       }
@@ -916,7 +946,10 @@ function wireTraffic(mapInstance: Map): void {
       if (ui.aircraftToggle.disabled) return;
       client.state.aircraftEnabled = !client.state.aircraftEnabled;
       ui.aircraftToggle.classList.toggle("is-active", client.state.aircraftEnabled);
-      if (!client.state.aircraftEnabled) clearAircraftData(mapInstance);
+      if (!client.state.aircraftEnabled) {
+        aircraft3d?.setTracks([]);
+        clearAircraftData(mapInstance);
+      }
     } else {
       if (ui.shipsToggle.disabled) return;
       client.state.shipsEnabled = !client.state.shipsEnabled;
@@ -940,6 +973,7 @@ function wireTraffic(mapInstance: Map): void {
     if (!mapInstance.getSource("live-aircraft")) {
       addTrafficLayers(mapInstance);
     }
+    ensureAircraft3d().setTracks(latestSnapshot.aircraft);
   };
 
   if (mapInstance.isStyleLoaded()) {

@@ -1,7 +1,7 @@
 {
   "name": "worldviewer",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n web,relay -c cyan,yellow \"vite\" \"tsx server/trafficRelay.ts\"",
@@ -17,9 +17,11 @@
   "dependencies": {
     "maplibre-contour": "^0.1.0",
     "maplibre-gl": "^5.20.0",
+    "three": "^0.183.2",
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@types/three": "^0.183.1",
     "@types/ws": "^8.18.1",
     "concurrently": "^9.2.1",
     "tsx": "^4.21.0",

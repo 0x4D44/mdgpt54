@@ -164,13 +164,17 @@ export function addTrafficLayers(map: Map): void {
 }
 
 /** Update GeoJSON data for both traffic sources. */
-export function updateTrafficData(map: Map, snapshot: SnapshotMessage): void {
+export function updateTrafficData(
+  map: Map,
+  snapshot: SnapshotMessage,
+  hiddenAircraftIds?: ReadonlySet<string>
+): void {
   const now = Date.now();
 
   const aircraftSource = map.getSource(AIRCRAFT_SOURCE);
   if (aircraftSource && "setData" in aircraftSource) {
     (aircraftSource as { setData(data: GeoJSON.FeatureCollection): void }).setData(
-      tracksToGeoJSON(snapshot.aircraft, now)
+      tracksToGeoJSON(snapshot.aircraft, now, hiddenAircraftIds)
     );
   }
 

@@ -100,6 +100,7 @@ describe("tracksToGeoJSON", () => {
       updatedAt: now,
       lng: 10.5,
       lat: 48.2,
+      onGround: false,
       aircraftTypeCode: "B738",
       registration: "N123AB",
       manufacturer: "Boeing",
@@ -119,6 +120,7 @@ describe("tracksToGeoJSON", () => {
     expect(feature.properties?.kind).toBe("aircraft");
     expect(feature.properties?.heading).toBe(90);
     expect(feature.properties?.opacity).toBe(1);
+    expect(feature.properties?.onGround).toBe(false);
     expect(feature.properties?.callsign).toBe("BAW123");
     expect(feature.properties?.flightCode).toBe("BAW 123");
     expect(feature.properties?.aircraftCategory).toBe(8);
@@ -129,6 +131,17 @@ describe("tracksToGeoJSON", () => {
     expect(feature.properties?.model).toBe("737-800");
     expect(feature.properties?.renderModelKey).toBe("boeing-737-family");
     expect(feature.properties?.aircraftVisualCategory).toBe("rotor");
+  });
+
+  it("hides only the aircraft that are actively replaced by the 3D layer", () => {
+    const now = 2000;
+    const visibleTrack = makeTrack({ id: "visible-3d", updatedAt: now });
+    const visible2dTrack = makeTrack({ id: "visible-2d", updatedAt: now, lng: 11 });
+
+    const result = tracksToGeoJSON([visibleTrack, visible2dTrack], now, new Set(["visible-3d"]));
+
+    expect(result.features[0].properties?.opacity).toBe(0);
+    expect(result.features[1].properties?.opacity).toBe(1);
   });
 });
 

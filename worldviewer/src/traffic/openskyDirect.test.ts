@@ -60,6 +60,7 @@ describe("parseOpenSkyStates", () => {
       label: "BAW 123",
       source: "opensky",
       updatedAt: now,
+      onGround: false,
       callsign: "BAW123",
       flightCode: "BAW 123",
       aircraftCategory: 6,
@@ -100,10 +101,45 @@ describe("parseOpenSkyStates", () => {
 
     expect(tracks).toHaveLength(1);
     expect(tracks[0]).toMatchObject({
+      onGround: false,
       callsign: "N123AB",
       flightCode: null,
       label: "N123AB",
       aircraftCategory: 2
+    });
+  });
+
+  it("parses the OpenSky on-ground state so grounded aircraft stay on the 2D path", () => {
+    const tracks = parseOpenSkyStates({
+      states: [
+        [
+          "abc123",
+          "BAW123 ",
+          "United Kingdom",
+          1773360000,
+          1773360000,
+          -3.3,
+          55.9,
+          32,
+          true,
+          0,
+          180,
+          null,
+          null,
+          38,
+          null,
+          null,
+          null,
+          6
+        ]
+      ]
+    });
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]).toMatchObject({
+      onGround: true,
+      altitudeMeters: 32,
+      geoAltitudeMeters: 38
     });
   });
 
