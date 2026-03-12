@@ -1,5 +1,13 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "./"
+  base: "./",
+  server: {
+    proxy: {
+      "/traffic": {
+        target: "ws://localhost:3210",
+        ws: true,
+      },
+    },
+  },
 });
