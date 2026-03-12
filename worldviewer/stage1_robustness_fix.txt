@@ -1,0 +1,9 @@
+**Changed**
+- In [trafficLayers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficLayers.ts):305, `createAircraftIcon` no longer throws when `canvas.getContext("2d")` is `null`. It now returns a transparent fallback image payload instead, using the small union type added at [trafficLayers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficLayers.ts):36, so `addTrafficLayers` degrades gracefully.
+- Added [trafficLayers.test.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficLayers.test.ts):40 to cover the null-`2d`-context path and verify `addTrafficLayers` still registers aircraft icons.
+- Added the required task journal entry at [2026.03.12 - JRN - stage1 robustness fix.md](C:/language/mdgpt54/worldviewer/wrk_journals/2026.03.12%20-%20JRN%20-%20stage1%20robustness%20fix.md):1. I did not edit the supervision journal.
+
+**Validation**
+- `npm test`: passed, 12 test files / 108 tests.
+- `npm run build`: passed. Vite emitted a chunk-size warning, but the build completed successfully.
+- No commit was made.

@@ -1,0 +1,14 @@
+1. `npx vitest run src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts`
+Passed on a single retry. The first attempt exited with code `1` and no output because of PowerShell/`npx.ps1` launch noise under `mdtimeout`; the retry completed cleanly with `2` test files and `21` tests passed.
+
+2. `npm test`
+Passed cleanly. `17` test files and `155` tests passed.
+
+3. `npm run build`
+Passed cleanly. `tsc --noEmit` succeeded and Vite production build completed.
+
+Warnings:
+- Vite reported large post-minification chunks over `500 kB`.
+- Reported bundle sizes included `assets/three.module-*.js` at `725.22 kB` and `assets/index-*.js` at `1,137.97 kB`.
+
+No manual file edits or commits were made.

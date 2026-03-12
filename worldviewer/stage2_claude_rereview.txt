@@ -1,0 +1,105 @@
+---
+
+## Summary
+
+Step 2 adds a static `icao24 ? identity` lookup using 256 pre-generated JSON shards, a session-scoped in-browser cache, non-blocking shard fetch with deduplication and failure blacklisting, and a CSV generation script. The runtime merge is two-phase: cached data applied immediately on each OpenSky poll, newly loaded shards applied asynchronously and re-published.
+
+---
+
+## Overall Assessment
+
+**Needs minor changes** — two small correctness issues, no architectural concerns.
+
+---
+
+## Strengths
+
+- **Non-blocking fetch chain is correct.** Immediate cached merge on poll, async shard load, reference-equality guard in `mergeAircraftIdentityIntoTracks` before re-render — the sequence in `trafficClient.ts:199–208` is tight and doesn't introduce a loading flash.
+- **Fetch deduplication and failure blacklisting are solid.** `loadingPrefixes` de-dupes concurrent `ensureLoadedForPrefix` calls for the same prefix; `failedPrefixes` prevents session retries. The concurrency test at `aircraftIdentity.test.ts:120` is a proper verification, not just a coverage formality.
+- **`buildAircraftIdentityShardUrlFromBase` correctly handles both deployment shapes.** The two URL-resolution tests (relative `./` vs. absolute `/worldviewer/`) exercise the exact GitHub Pages URL, not a synthetic stand-in. This is the right level of specificity for a static-hosting correctness test.
+- **Compact tuple on disk, expanded object in memory.** The `AircraftIdentityTuple` / `AircraftIdentity` split keeps shard files small without leaking the wire format into the cache. `parseAircraftIdentityShard` validates on the way in, so malformed shard data is dropped, not propagated.
+- **`pruneStaleShardFiles` prevents residue.** Deleting JSON files that don't match the expected 256 names is the right call — without it, a repartition would leave ghosts that the browser would happily cache.
+- **No mock abuse in tests.** The `AircraftIdentityStore` tests inject a real `fetch` stub into the constructor rather than patching `globalThis.fetch`, so the production code path is exercised directly.
+- **HLD constraints honoured throughout.** No local storage, no retry, no new runtime service, shard URL derived from `import.meta.env.BASE_URL` for Vite sub-path compatibility.
+
+---
+
+## Required Changes
+
+**`C:\language\mdgpt54\worldviewer\src\traffic\aircraftIdentity.ts:144` — Redundant double-fallback on `renderModelKey`**
+
+```ts
+// current
+const renderModelKey = deriveRenderModelKey(aircraftTypeCode ?? track.aircraftTypeCode ?? null);
+```
+
+`aircraftTypeCode` on line 140 is already `identity.typeCode ?? track.aircraftTypeCode ?? null`, so `aircraftTypeCode ?? track.aircraftTypeCode` is always equal to `aircraftTypeCode`. The inner fallback is dead and misleading — it implies `aircraftTypeCode` could differ from `track.aircraftTypeCode` in a meaningful way when it can't.
+
+```ts
+// fix
+const renderModelKey = deriveRenderModelKey(aircraftTypeCode);
+```
+
+---
+
+**`C:\language\mdgpt54\worldviewer\scripts\generateAircraftIdentity.ts:67,74` — `shards.get(prefix) ?? {}` called twice on a pre-seeded map**
+
+```ts
+const json = serializeAircraftIdentityShard(shards.get(prefix) ?? {});
+const rawBytes = Buffer.byteLength(json);
+const gzipBytes = gzipSync(Buffer.from(json), { level: 9 }).byteLength;
+
+await writeFile(`${options.outputDir}/${prefix}.json`, json, "utf8");
+summaries.push({
+  prefix,
+  entries: Object.keys(shards.get(prefix) ?? {}).length,   // second call
+  ...
+});
+```
+
+All 256 prefixes are initialised at the top of `generateAircraftIdentity`, so `.get(prefix)` never returns `undefined` inside this loop. The `?? {}` fallback is unreachable and calls `.get()` a second time unnecessarily. Store the shard once:
+
+```ts
+const shard = shards.get(prefix)!;
+const json = serializeAircraftIdentityShard(shard);
+// ...
+entries: Object.keys(shard).length,
+```
+
+---
+
+## Suggestions
+
+**`C:\language\mdgpt54\worldviewer\src\traffic\trafficHelpers.test.ts` — Missing edge case for `formatAircraftAltitude` at ground level**
+
+`??` is nullish, not falsy, so `geoAltitudeMeters: 0` correctly returns `"0 m"` (geo wins). But that behaviour is not tested. A one-liner would document the intent:
+
+```ts
+it("uses geo altitude of zero rather than falling back to barometric", () => {
+  expect(formatAircraftAltitude({ altitudeMeters: 10000, geoAltitudeMeters: 0 })).toBe("0 m");
+});
+```
+
+---
+
+**Nit: `C:\language\mdgpt54\worldviewer\src\traffic\aircraftIdentityData.ts:142` — `localeCompare` for pure ASCII hex keys**
+
+```ts
+.sort(([left], [right]) => left.localeCompare(right))
+```
+
+All icao24 strings are lowercase `[0-9a-f]{6}`, so `localeCompare` and byte-order comparison are identical in result. A plain `left < right ? -1 : left > right ? 1 : 0` (or even just `.sort()` on the entry pairs) is marginally faster and removes the locale dependency. Build-time only, so impact is negligible — genuine nit.
+
+---
+
+**Optional: `C:\language\mdgpt54\worldviewer\scripts\generateAircraftIdentity.test.ts` — Positional input path is untested**
+
+`parseGeneratorArgs` has a branch for a bare positional argument (`if (!arg.startsWith("-") && inputPath.length === 0)`), but the test only exercises the `--input` flag form. Low priority, but easy to add.
+
+---
+
+## Questions
+
+1. `trafficClient.ts` imports `openSkyUrl` and `parseOpenSkyStates` from `./openskyDirect`, which wasn't in the review scope. Is that Step 1 code that was already reviewed, and does `parseOpenSkyStates` correctly populate the Step 2 fields (`aircraftTypeCode`, `registration`, etc.) if OpenSky ever returns them inline, or is it intentionally a no-op for those fields?
+
+2. `RENDER_MODEL_KEYS` in `aircraftIdentityData.ts` covers the most common narrowbody/widebody codes but is missing A330/A340/A350/A380, E-jets, CRJ, ATR, etc. Is this intentionally minimal for Step 2 (fallback to category class is acceptable), or should coverage be broadened before Step 3 starts consuming `renderModelKey`?

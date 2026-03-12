@@ -1,0 +1,33 @@
+Use the code-review-apply-feedback skill approach on the current Stage 3 working tree in C:\language\mdgpt54\worldviewer.
+
+Context:
+- This is Step 3 of the aircraft identity / 3D model feature.
+- Stage 1 and Stage 2 are already committed.
+- Do not commit.
+- Use apply_patch for file edits.
+- Keep changes minimal and focused on the review feedback.
+- Update the Stage 3 implementation journal and the supervision journal with what you changed.
+- Run focused validation and then broader validation if the focused checks pass.
+- Do not touch scratch review text files.
+
+Review feedback to apply:
+1. Agree: fix aircraft type-code classification false positives caused by broad bizjet prefixes. Current bug: C208/C206/C402 and military C130/C17 can be misclassified as bizjets. Prefer replacing ambiguous prefixes with specific Citation/business-jet prefixes and/or reordering checks. Add tests.
+2. Agree: stop using the map.transform cast for model matrices. Use the public custom-layer render parameter API instead of reaching through map internals. Keep the 3D placement working for the current MapLibre stack.
+3. Agree: if dynamic import("three") fails, do not silently retry forever on every move. Keep 2D aircraft visible and avoid infinite retry churn. A one-time warning is acceptable.
+4. Agree: avoid mutating the object map while iterating its entries in syncAircraftObjects.
+5. Apply the minor cleanup: remove the misleading antialias option from the Three renderer creation when reusing MapLibre's GL context.
+6. If it stays low-churn, add a small helicopter type-code prefix list so low-altitude rotor traffic classifies more accurately.
+
+Files likely involved:
+- C:\language\mdgpt54\worldviewer\src\traffic\aircraft3d.ts
+- C:\language\mdgpt54\worldviewer\src\traffic\aircraft3d.test.ts
+- C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.ts
+- C:\language\mdgpt54\worldviewer\wrk_journals\2026.03.12 - JRN - aircraft step 3 implementation.md
+- C:\language\mdgpt54\worldviewer\wrk_journals\2026.03.12 - JRN - aircraft implementation supervision.md
+
+Validation target after edits:
+- focused vitest on touched traffic tests
+- npm test
+- npm run build
+
+Return a concise summary of what you changed, what you skipped, and validation results.

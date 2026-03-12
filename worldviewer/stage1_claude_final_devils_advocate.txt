@@ -1,0 +1,48 @@
+---
+
+### Verdict
+
+**Pass — no critical show-stoppers.** The Step 1 scope is honest, the popup order matches the HLD, and the caret replacement is clean. Several non-critical concerns and hidden assumptions are worth surfacing before merge.
+
+---
+
+### Critical Issues
+
+None. Specifically:
+
+- `&extended=1` is required to get `state[17]` (category) and parses gracefully if the field is absent (`undefined` ? `typeof !== "number"` ? null). Not scope creep; it's the prerequisite for Step 1 data.
+- The popup order `flightCode ? raw callsign ? category ? speed | altitude | age` is exactly reproduced: `buildAircraftPopupIdentity` produces the title from `firstText(flightCode, callsign, label, id)` and the identity rows in the correct order; `compactText(speed, altitude, age)` fills the meta line.
+- No-flightCode path (e.g. `N123AB`) deduplicates correctly: callsign becomes the title and the "Callsign" row is suppressed. Logic in `buildAircraftPopupIdentity` handles this via `track.callsign !== title`.
+- Browser-direct path keeps working end-to-end; all extended fields fall back to null when absent.
+
+---
+
+### Non-Critical Concerns
+
+1. **`label` semantic drift.** `openskyDirect.ts` now writes `label: flightCode ?? callsign` (e.g. `"BAW 123"`), not the raw callsign anymore. For browser-direct tracks this changes the GeoJSON `label` property. The popup uses `flightCode`/`callsign` fields directly, so the title is still correct. But any code outside this diff that reads `props.label` expecting the ICAO callsign format will silently get the space-separated form. Check for any logging, analytics, or third-party layer consumers that touch `label`.
+
+2. **Relay path degrades silently.** Relay-sourced `LiveTrack` objects don't carry `callsign`, `flightCode`, `aircraftCategory`, or `geoAltitudeMeters`. `tracksToGeoJSON` maps missing optionals to `null` (`undefined ?? null`), so `buildAircraftPopupIdentity` receives `callsign: null, flightCode: null, aircraftCategory: null`. Result: popup shows the raw relay label (old-format callsign) with no category row and baro altitude. This is graceful degradation, not a crash, but it means relay aircraft behave differently from browser-direct aircraft in the popup — a visible inconsistency until the relay is updated.
+
+3. **`AIRCRAFT_CATEGORY_LABELS[13]` = `"Reserved"`.** If OpenSky ever emits category 13, the popup will display "Category Reserved" — confusing to users. Categories 18–20 ("Point obstacle", "Cluster obstacle", "Line obstacle") are ground obstacles that can appear in ADS-B data. These could produce meaningless category rows. Suppressing them alongside 0 and 1 would be cleaner.
+
+4. **Separator regression: `" · "` ? `" | "`.** Old meta line joined with `" · "`; new `compactText` uses `" | "`. This affects both aircraft and ship popups. Not wrong, but it's a cosmetic change that wasn't called out and will show up in visual diffs.
+
+5. **Canvas fallback is invisible, not a caret.** If `getContext("2d")` returns null, `createAircraftIcon` returns a fully transparent `Uint8ClampedArray`. The aircraft will be present but invisible — no fallback to the old `"^"` text symbol. In production browsers this path is unreachable, but it's a silent regression versus the previous behavior in constrained environments (headless, certain CI renderers).
+
+6. **Balloons and parachutists drawn as gliders.** `getAircraftVisualCategory`: cases 9 (`Glider`), 10 (`Lighter-than-air`), 11 (`Parachutist`) all return `"glider"` — a fixed-wing polygon. A balloon wearing a glider silhouette is semantically odd. Acceptable as a Step 1 approximation, but only if that's the documented intent.
+
+7. **`trafficLayers.test.ts` uses `vi.resetModules()` + dynamic import.** This is the right pattern for stubbing `document`, but it's fragile: if `trafficLayers` is ever loaded statically before this test runs in the same Vitest worker, the stub won't apply. The test should pass in isolation now, but keep an eye on test-order sensitivity.
+
+---
+
+### Hidden Assumptions To Verify
+
+1. **OpenSky rate limiting / caching layer is URL-keyed.** Adding `&extended=1` changes the URL. If any proxy, CDN, or service worker caches the old URL, requests will continue hitting the non-extended endpoint (17-field responses). `state[17]` would be `undefined`, giving `aircraftCategory: null` — silently loses category data with no error. Verify the caching layer uses the full URL as the cache key.
+
+2. **The relay will be updated before the relay path matters.** The review treats relay-path degradation as acceptable for Step 1. This is only true if Step 2 (or a relay update) is planned and tracked. If the relay is never updated, relay users will permanently get a second-class popup. Confirm this is a conscious deferred decision, not an oversight.
+
+3. **`document.createElement("canvas")` is guaranteed at `addTrafficLayers` call time.** If `addTrafficLayers` is ever called in an SSR context or during a test that doesn't stub `document`, the icons will be transparent and there will be no console error (the fallback is silent). The test covers the null-context case but not the case where `document` itself is absent.
+
+4. **`pixelRatio: 2` with 48px canvas produces acceptable visual size.** With `pixelRatio: 2`, MapLibre treats the icon as a 24px logical sprite. The `icon-size` expression ranges from `0.42`–`0.58`, giving a rendered size of ~10–14px at the specified zoom levels. That's workable for a map icon, but verify against the actual tile atlas and display hardware — on a 1× display the icon may appear over-scaled; on 3× Retina it may be slightly soft.
+
+5. **The `FLIGHT_CODE_CALLSIGN_RE = /^([A-Z]{3})(\d{1,4}[A-Z]?)$/` regex is the agreed canonical form.** It rejects 2-letter IATA codes (`"BA123"` ? null), pure numeric ICAO-style callsigns, and any lowercase input. If OpenSky callsigns include non-ICAO-prefixed registrations (e.g. some European military or charter operators), they will always render as raw callsigns with no flight-code title. Confirm this is the intended scope.

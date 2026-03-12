@@ -1,0 +1,18 @@
+Use the code-review-apply-feedback skill approach on the current Stage 3 working tree in C:\language\mdgpt54\worldviewer.
+
+This is a second narrow feedback-application pass. Do not commit. Use apply_patch for edits. Keep scope tight to the files already involved in Step 3.
+
+Decision log for this pass:
+1. Disagree with the claimed GPU memory leak from clone(true). In this code path, three.js Mesh.copy shares geometry/material references (`node_modules/three/src/objects/Mesh.js` assigns `this.material = source.material` and `this.geometry = source.geometry`), so removing stale clone objects does not orphan distinct GPU buffers. Do not add disposal churn for stale clones. If useful, add a short clarifying comment near clone creation or disposal so future readers do not make the same mistake.
+2. Agree: fix the fixed-wing geometry axis bug. The aircraft nose/tail surfaces should be aligned with the fuselage, not offset onto the vertical axis. Prefer the cleanest small fix, even if that means simplifying the local model orientation and the model-matrix convention together.
+3. Agree: remove render-loop object-set churn. `syncAircraftObjects` should not rebuild membership every frame. Move membership reconciliation to track updates, not render, and preserve the current bounded behaviour.
+4. Agree: remove the per-frame Matrix4 allocation churn in the model transform path. Reuse scratch matrices or an equivalent low-allocation approach.
+5. If it stays low-churn, also handle the latent class-update case: if an existing track's `classKey` changes after identity enrichment, replace the mesh instance instead of silently keeping the old class.
+6. Update the two journals with this pass and validation outcomes.
+
+Validation target:
+- focused vitest on touched Step 3 tests
+- npm test
+- npm run build
+
+Return a concise summary of what changed, what you deliberately did not change, and validation results.
