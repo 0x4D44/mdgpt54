@@ -1,4 +1,4 @@
-import type { SnapshotStatus, TrafficLayerStatusCode } from "./trafficTypes";
+import type { SnapshotStatus, TrafficConnectionStatus, TrafficLayerStatusCode } from "./trafficTypes";
 
 export type TrafficUIElements = {
   section: HTMLElement;
@@ -30,7 +30,6 @@ export function createTrafficUI(controlDock: HTMLElement): TrafficUIElements {
     <p id="traffic-credit" class="credit-note traffic-credit" hidden></p>
   `;
 
-  // Insert before the final credit-note paragraph
   const existingCredit = controlDock.querySelector(".credit-note");
   if (existingCredit) {
     controlDock.insertBefore(section, existingCredit);
@@ -51,7 +50,7 @@ export function createTrafficUI(controlDock: HTMLElement): TrafficUIElements {
 /** Update the status text based on connection state. */
 export function updateTrafficStatus(
   els: TrafficUIElements,
-  connectionStatus: "connecting" | "connected" | "disconnected",
+  connectionStatus: TrafficConnectionStatus,
   aircraftEnabled: boolean,
   shipsEnabled: boolean
 ): void {
@@ -62,8 +61,12 @@ export function updateTrafficStatus(
   }
 
   switch (connectionStatus) {
+    case "standby":
+      els.statusText.textContent = "Standby";
+      els.statusText.className = "traffic-status";
+      break;
     case "connecting":
-      els.statusText.textContent = "Connecting…";
+      els.statusText.textContent = "Connecting...";
       els.statusText.className = "traffic-status traffic-status--connecting";
       break;
     case "connected":
@@ -71,8 +74,12 @@ export function updateTrafficStatus(
       els.statusText.className = "traffic-status traffic-status--live";
       break;
     case "disconnected":
-      els.statusText.textContent = "Reconnecting…";
+      els.statusText.textContent = "Reconnecting...";
       els.statusText.className = "traffic-status traffic-status--disconnected";
+      break;
+    case "unavailable":
+      els.statusText.textContent = "Static Only";
+      els.statusText.className = "traffic-status traffic-status--unavailable";
       break;
   }
 }
@@ -133,7 +140,7 @@ export function updateLayerStatusHints(
   localHint: string | null = null
 ): void {
   const hints = buildLayerStatusHints(status, aircraftEnabled, shipsEnabled, localHint);
-  els.hintsContainer.textContent = hints.join(" · ");
+  els.hintsContainer.textContent = hints.join(" | ");
   els.hintsContainer.hidden = hints.length === 0;
 }
 

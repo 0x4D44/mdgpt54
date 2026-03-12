@@ -23,6 +23,13 @@ export type TrafficLayerStatus = {
   message: string | null;
 };
 
+export type TrafficConnectionStatus =
+  | "standby"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "unavailable";
+
 export type SnapshotStatus = {
   aircraft: TrafficLayerStatus;
   ships: TrafficLayerStatus;

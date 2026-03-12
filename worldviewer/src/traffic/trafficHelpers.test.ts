@@ -8,7 +8,8 @@ import {
   formatAge,
   formatAltitude,
   formatSpeed,
-  getLowZoomTrafficHint,
+  getTrafficClientHint,
+  isStaticTrafficHost,
   isTrackStale,
   parseSnapshot,
   resolveEffectiveTrafficLayers,
@@ -191,18 +192,34 @@ describe("resolveEffectiveTrafficLayers", () => {
   });
 });
 
-describe("getLowZoomTrafficHint", () => {
+describe("isStaticTrafficHost", () => {
+  it("detects GitHub Pages hosts", () => {
+    expect(isStaticTrafficHost("0x4d44.github.io")).toBe(true);
+  });
+
+  it("does not treat localhost as a static host", () => {
+    expect(isStaticTrafficHost("localhost")).toBe(false);
+  });
+});
+
+describe("getTrafficClientHint", () => {
   it("returns null when no traffic layers are requested", () => {
-    expect(getLowZoomTrafficHint({ aircraftEnabled: false, shipsEnabled: false }, 1)).toBeNull();
+    expect(getTrafficClientHint({ aircraftEnabled: false, shipsEnabled: false }, 1, "localhost")).toBeNull();
   });
 
   it("returns null when zoom is high enough", () => {
-    expect(getLowZoomTrafficHint({ aircraftEnabled: true, shipsEnabled: true }, MIN_LIVE_TRAFFIC_ZOOM)).toBeNull();
+    expect(getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: true }, MIN_LIVE_TRAFFIC_ZOOM, "localhost")).toBeNull();
   });
 
   it("returns a hint below the minimum zoom when traffic is enabled", () => {
-    expect(getLowZoomTrafficHint({ aircraftEnabled: true, shipsEnabled: false }, MIN_LIVE_TRAFFIC_ZOOM - 0.5)).toBe(
+    expect(getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: false }, MIN_LIVE_TRAFFIC_ZOOM - 0.5, "localhost")).toBe(
       "Zoom in past 5 to activate live traffic."
+    );
+  });
+
+  it("prefers the static-host hint on GitHub Pages", () => {
+    expect(getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: true }, 10, "0x4d44.github.io")).toBe(
+      null
     );
   });
 });

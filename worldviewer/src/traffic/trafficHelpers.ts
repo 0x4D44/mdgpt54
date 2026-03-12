@@ -102,7 +102,15 @@ export function resolveEffectiveTrafficLayers(
   return state;
 }
 
-export function getLowZoomTrafficHint(state: TrafficToggleState, zoom: number): string | null {
+export function isStaticTrafficHost(hostname: string): boolean {
+  return hostname.endsWith("github.io");
+}
+
+export function getTrafficClientHint(
+  state: TrafficToggleState,
+  zoom: number,
+  _hostname: string
+): string | null {
   if (!state.aircraftEnabled && !state.shipsEnabled) {
     return null;
   }

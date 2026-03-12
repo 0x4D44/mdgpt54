@@ -41,7 +41,7 @@ import {
   updateTrafficStatus,
   type TrafficUIElements
 } from "./traffic/trafficUI";
-import type { SnapshotStatus } from "./traffic/trafficTypes";
+import type { SnapshotStatus, TrafficConnectionStatus } from "./traffic/trafficTypes";
 
 type Preset = {
   id: string;
@@ -207,7 +207,7 @@ app.innerHTML = `
   <div class="app-shell">
     <div class="space-backdrop" aria-hidden="true"></div>
     <div id="map" class="map-panel" role="application" aria-label="Interactive 3D Earth twin"></div>
-    <aside class="control-dock">
+    <aside id="control-dock" class="control-dock">
       <p class="eyebrow">Orbital Browser Twin</p>
       <h1>Earth from orbit to street scale.</h1>
       <p class="lede">
@@ -297,6 +297,16 @@ app.innerHTML = `
         Layers: OpenFreeMap, EOX Maps, AWS Terrain Tiles, OpenStreetMap Nominatim.
       </p>
     </aside>
+    <button
+      id="dock-toggle"
+      class="dock-toggle"
+      type="button"
+      aria-controls="control-dock"
+      aria-expanded="true"
+      aria-label="Hide side panel"
+    >
+      <
+    </button>
 
     <div id="status-pill" class="status-pill">Loading open Earth layers…</div>
   </div>
@@ -313,6 +323,8 @@ const metricZoom = document.querySelector<HTMLElement>("#metric-zoom")!;
 const metricAltitude = document.querySelector<HTMLElement>("#metric-altitude")!;
 const metricPitch = document.querySelector<HTMLElement>("#metric-pitch")!;
 const metricTerrain = document.querySelector<HTMLElement>("#metric-terrain")!;
+const controlDock = document.querySelector<HTMLElement>("#control-dock")!;
+const dockToggle = document.querySelector<HTMLButtonElement>("#dock-toggle")!;
 const presetButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-preset]"));
 const toggleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-toggle]"));
 
@@ -334,6 +346,7 @@ void bootstrap();
 
 async function bootstrap(): Promise<void> {
   try {
+    wireDockToggle();
     const demSource = new mlcontour.DemSource({
       url: TERRAIN_TILE_TEMPLATE_URL,
       encoding: "terrarium",
@@ -356,6 +369,25 @@ async function bootstrap(): Promise<void> {
     statusPill.textContent = message;
     statusPill.classList.add("is-error");
   }
+}
+
+function wireDockToggle(): void {
+  let expanded = true;
+
+  const sync = () => {
+    controlDock.classList.toggle("is-collapsed", !expanded);
+    dockToggle.classList.toggle("is-collapsed", !expanded);
+    dockToggle.textContent = expanded ? "<" : ">";
+    dockToggle.setAttribute("aria-expanded", String(expanded));
+    dockToggle.setAttribute("aria-label", expanded ? "Hide side panel" : "Show side panel");
+  };
+
+  dockToggle.addEventListener("click", () => {
+    expanded = !expanded;
+    sync();
+  });
+
+  sync();
 }
 
 async function buildStyle(demSource: InstanceType<typeof mlcontour.DemSource>): Promise<StyleSpecification> {
@@ -822,11 +854,8 @@ function wireToggles(): void {
 }
 
 function wireTraffic(mapInstance: Map): void {
-  const controlDock = document.querySelector<HTMLElement>(".control-dock");
-  if (!controlDock) return;
-
   const ui: TrafficUIElements = createTrafficUI(controlDock);
-  let connectionStatus: "connecting" | "connected" | "disconnected" = "disconnected";
+  let connectionStatus: TrafficConnectionStatus = "disconnected";
   let lastStatus: SnapshotStatus = {
     aircraft: { code: "ok", message: null },
     ships: { code: "ok", message: null }
@@ -840,7 +869,7 @@ function wireTraffic(mapInstance: Map): void {
       lastStatus,
       client.state.aircraftEnabled,
       client.state.shipsEnabled,
-      client.getLowZoomHint()
+      client.getClientHint()
     );
   };
 
@@ -854,7 +883,7 @@ function wireTraffic(mapInstance: Map): void {
         snapshot.status,
         client.state.aircraftEnabled,
         client.state.shipsEnabled,
-        client.getLowZoomHint()
+        client.getClientHint()
       );
 
       // Auto-disable layers that became unavailable

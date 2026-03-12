@@ -16,6 +16,7 @@
   --accent-strong: #a4ecff;
   --gold: #f4c989;
   --muted: rgba(229, 235, 255, 0.76);
+  --dock-width: min(28rem, calc(100vw - 2rem));
 }
 
 * {
@@ -88,18 +89,76 @@ button {
 }
 
 .control-dock {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   z-index: 2;
   display: grid;
   gap: 1rem;
-  width: min(28rem, calc(100vw - 2rem));
+  width: var(--dock-width);
+  max-height: calc(100vh - 2rem);
   margin: 1rem;
   padding: 1.1rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--panel-border);
   border-radius: 1.5rem;
   background: var(--panel-bg);
   backdrop-filter: blur(18px) saturate(135%);
   box-shadow: var(--panel-shadow);
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.control-dock.is-collapsed {
+  transform: translateX(calc(-100% - 1.5rem));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.control-dock::-webkit-scrollbar {
+  width: 0.7rem;
+}
+
+.control-dock::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(164, 195, 255, 0.24);
+  background-clip: padding-box;
+}
+
+.dock-toggle {
+  position: absolute;
+  top: 1.35rem;
+  left: calc(var(--dock-width) - 0.25rem);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: rgba(8, 14, 24, 0.86);
+  color: #edf6ff;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  transition:
+    left 180ms ease,
+    background 140ms ease,
+    transform 140ms ease,
+    border-color 140ms ease;
+}
+
+.dock-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(164, 236, 255, 0.55);
+}
+
+.dock-toggle.is-collapsed {
+  left: 0.75rem;
 }
 
 .eyebrow,
@@ -347,6 +406,10 @@ h2 {
   color: rgba(255, 140, 140, 0.85);
 }
 
+.traffic-status--unavailable {
+  color: var(--gold);
+}
+
 .traffic-coverage {
   margin: 0;
   font-size: 0.78rem;
@@ -387,9 +450,10 @@ h2 {
 
 @media (max-width: 900px) {
   .control-dock {
-    width: auto;
+    width: var(--dock-width);
     margin: 0.75rem;
     padding: 1rem;
+    max-height: calc(100vh - 1.5rem);
   }
 
   .preset-grid,
@@ -407,6 +471,15 @@ h2 {
     left: 0.75rem;
     bottom: 0.75rem;
     max-width: none;
+  }
+
+  .dock-toggle {
+    top: 1rem;
+    left: calc(var(--dock-width) - 0.5rem);
+  }
+
+  .dock-toggle.is-collapsed {
+    left: 0.75rem;
   }
 }
 

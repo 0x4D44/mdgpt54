@@ -6,11 +6,10 @@ Browser-based Earth twin built with MapLibre GL JS. It starts in orbit, supports
 
 ```powershell
 npm install
-npm run dev:relay
 npm run dev
 ```
 
-Run the relay and Vite in separate terminals. The browser app connects to the relay at `/traffic`.
+`npm run dev` now starts both Vite and the local traffic relay. If you only want the frontend dev server, use `npm run dev:web`.
 
 ## Configuration
 
@@ -23,11 +22,12 @@ Run the relay and Vite in separate terminals. The browser app connects to the re
 - EOX Sentinel-2 Cloudless imagery for realistic satellite texture
 - AWS Terrain Tiles / Terrarium DEM for terrain and relief
 - OpenStreetMap Nominatim search for lightweight geocoding
-- OpenSky via the local relay for live aircraft
+- OpenSky direct from the browser for live aircraft
 - AISStream via the local relay for live ships
 
 ## Notes
 
 - This is the realistic open-data version of the feature. It reaches street-scale navigation with terrain, roads, labels, and extruded buildings, but it is not worldwide photogrammetry.
 - Live traffic is intended for personal, non-commercial use and depends on public community feeds. Coverage and freshness vary by region and provider.
+- GitHub Pages can host the static globe build and live aircraft, because aircraft now come direct from OpenSky in the browser. Live ships still need a relay, so the ship toggle stays unavailable on the Pages build.
 - The external services above are public community/demo services. For sustained production traffic, swap them for self-hosted or contracted equivalents.
