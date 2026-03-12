@@ -18,6 +18,11 @@ export type LiveTrack = {
   flightCode?: string | null;
   aircraftCategory?: number | null;
   geoAltitudeMeters?: number | null;
+  aircraftTypeCode?: string | null;
+  registration?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  renderModelKey?: string | null;
 };
 
 export type TrafficLayerStatusCode = "ok" | "zoom_in" | "unavailable";

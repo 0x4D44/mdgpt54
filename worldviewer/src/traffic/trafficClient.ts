@@ -1,5 +1,6 @@
 import type { Map } from "maplibre-gl";
 
+import { AircraftIdentityStore } from "./aircraftIdentity";
 import { openSkyUrl, parseOpenSkyStates } from "./openskyDirect";
 import {
   MIN_LIVE_TRAFFIC_ZOOM,
@@ -50,6 +51,7 @@ export class TrafficClient {
   private disposed = false;
   private readonly map: Map;
   private readonly callbacks: TrafficClientCallbacks;
+  private readonly aircraftIdentity = new AircraftIdentityStore();
   private latestAircraft: LiveTrack[] = [];
   private latestShips: LiveTrack[] = [];
   private shipStatus: SnapshotStatus["ships"] = { code: "ok", message: null };
@@ -193,10 +195,18 @@ export class TrafficClient {
       }
 
       const now = Date.now();
-      this.latestAircraft = parseOpenSkyStates(payload, now);
+      const parsedAircraft = parseOpenSkyStates(payload, now);
+      this.latestAircraft = this.aircraftIdentity.mergeTracks(parsedAircraft);
       this.lastAircraftPollAt = now;
       this.lastAircraftBbox = bbox;
       this.aircraftRuntime = "live";
+      void this.aircraftIdentity.ensureLoadedForTracks(parsedAircraft).then((loaded) => {
+        if (!loaded || this.disposed) {
+          return;
+        }
+
+        this.refreshAircraftIdentity();
+      });
     } catch (error) {
       if (abortController.signal.aborted || this.disposed) {
         return;
@@ -429,6 +439,20 @@ export class TrafficClient {
 
   private isAircraftActive(): boolean {
     return this.state.aircraftEnabled && this.map.getZoom() >= MIN_LIVE_TRAFFIC_ZOOM;
+  }
+
+  private refreshAircraftIdentity(): void {
+    if (this.latestAircraft.length === 0) {
+      return;
+    }
+
+    const mergedAircraft = this.aircraftIdentity.mergeTracks(this.latestAircraft);
+    if (mergedAircraft === this.latestAircraft) {
+      return;
+    }
+
+    this.latestAircraft = mergedAircraft;
+    this.publishSnapshot();
   }
 
   private isShipRelayActive(): boolean {

@@ -257,6 +257,10 @@ function buildAircraftPopupHtml(props: Record<string, unknown>, age: string): st
     label: readString(props.label),
     callsign: readString(props.callsign),
     flightCode: readString(props.flightCode),
+    registration: readString(props.registration),
+    aircraftTypeCode: readString(props.aircraftTypeCode),
+    manufacturer: readString(props.manufacturer),
+    model: readString(props.model),
     aircraftCategory: readNumber(props.aircraftCategory)
   });
   const speed = formatSpeed(readNumber(props.speedKnots));

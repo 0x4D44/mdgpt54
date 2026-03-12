@@ -1,4 +1,5 @@
 import type { Bbox, LiveTrack, SnapshotMessage } from "./trafficTypes";
+import { formatAircraftModelDescription } from "./aircraftIdentityData";
 
 /** Stale threshold in milliseconds — tracks older than this get faded. */
 export const STALE_THRESHOLD_MS = 60_000;
@@ -79,6 +80,11 @@ export function tracksToGeoJSON(tracks: LiveTrack[], now: number): GeoJSON.Featu
         flightCode: track.flightCode ?? null,
         aircraftCategory: track.aircraftCategory ?? null,
         geoAltitudeMeters: track.geoAltitudeMeters ?? null,
+        aircraftTypeCode: track.aircraftTypeCode ?? null,
+        registration: track.registration ?? null,
+        manufacturer: track.manufacturer ?? null,
+        model: track.model ?? null,
+        renderModelKey: track.renderModelKey ?? null,
         aircraftVisualCategory:
           track.kind === "aircraft" ? getAircraftVisualCategory(track.aircraftCategory ?? null) : null,
         opacity: trackOpacity(track, now)
@@ -165,13 +171,30 @@ export function buildAircraftPopupIdentity(track: {
   label: string | null;
   callsign?: string | null;
   flightCode?: string | null;
+  registration?: string | null;
+  aircraftTypeCode?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
   aircraftCategory?: number | null;
 }): { title: string; rows: string[] } {
-  const title = firstText(track.flightCode, track.callsign, track.label, track.id) ?? track.id;
+  const title = firstText(track.flightCode, track.callsign, track.registration, track.label, track.id) ?? track.id;
   const rows: string[] = [];
 
   if (hasText(track.callsign) && track.callsign !== title) {
     rows.push(`Callsign ${track.callsign.trim()}`);
+  }
+
+  if (hasText(track.registration) && track.registration !== title) {
+    rows.push(`Registration ${track.registration.trim()}`);
+  }
+
+  const modelDescription = formatAircraftModelDescription(track.manufacturer ?? null, track.model ?? null);
+  if (modelDescription) {
+    rows.push(modelDescription);
+  }
+
+  if (hasText(track.aircraftTypeCode)) {
+    rows.push(`Type ${track.aircraftTypeCode.trim().toUpperCase()}`);
   }
 
   const categoryLabel = getAircraftCategoryLabel(track.aircraftCategory ?? null);

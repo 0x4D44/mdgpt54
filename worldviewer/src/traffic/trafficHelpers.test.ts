@@ -100,10 +100,15 @@ describe("tracksToGeoJSON", () => {
       updatedAt: now,
       lng: 10.5,
       lat: 48.2,
+      aircraftTypeCode: "B738",
+      registration: "N123AB",
+      manufacturer: "Boeing",
+      model: "737-800",
       callsign: "BAW123",
       flightCode: "BAW 123",
       aircraftCategory: 8,
-      geoAltitudeMeters: 10120
+      geoAltitudeMeters: 10120,
+      renderModelKey: "boeing-737-family"
     });
     const result = tracksToGeoJSON([track], now);
     expect(result.features).toHaveLength(1);
@@ -118,11 +123,12 @@ describe("tracksToGeoJSON", () => {
     expect(feature.properties?.flightCode).toBe("BAW 123");
     expect(feature.properties?.aircraftCategory).toBe(8);
     expect(feature.properties?.geoAltitudeMeters).toBe(10120);
+    expect(feature.properties?.aircraftTypeCode).toBe("B738");
+    expect(feature.properties?.registration).toBe("N123AB");
+    expect(feature.properties?.manufacturer).toBe("Boeing");
+    expect(feature.properties?.model).toBe("737-800");
+    expect(feature.properties?.renderModelKey).toBe("boeing-737-family");
     expect(feature.properties?.aircraftVisualCategory).toBe("rotor");
-    expect(feature.properties).not.toHaveProperty("aircraftTypeCode");
-    expect(feature.properties).not.toHaveProperty("registration");
-    expect(feature.properties).not.toHaveProperty("manufacturer");
-    expect(feature.properties).not.toHaveProperty("model");
   });
 });
 
@@ -279,18 +285,22 @@ describe("getAircraftCategoryLabel", () => {
 });
 
 describe("buildAircraftPopupIdentity", () => {
-  it("orders Step 1 aircraft identity as flight code, raw callsign, then category", () => {
+  it("orders Step 2 aircraft identity as flight code, raw callsign, registration, model, type, then category", () => {
     expect(
       buildAircraftPopupIdentity({
         id: "abc123",
         label: "BAW 123",
         callsign: "BAW123",
         flightCode: "BAW 123",
+        registration: "N123AB",
+        manufacturer: "Boeing",
+        model: "737-800",
+        aircraftTypeCode: "B738",
         aircraftCategory: 6
       })
     ).toEqual({
       title: "BAW 123",
-      rows: ["Callsign BAW123", "Category Heavy"]
+      rows: ["Callsign BAW123", "Registration N123AB", "Boeing 737-800", "Type B738", "Category Heavy"]
     });
   });
 
@@ -301,11 +311,12 @@ describe("buildAircraftPopupIdentity", () => {
         label: "N123AB",
         callsign: "N123AB",
         flightCode: null,
+        registration: "G-ABCD",
         aircraftCategory: 8
       })
     ).toEqual({
       title: "N123AB",
-      rows: ["Category Rotorcraft"]
+      rows: ["Registration G-ABCD", "Category Rotorcraft"]
     });
   });
 
@@ -353,10 +364,10 @@ describe("getTrafficClientHint", () => {
     );
   });
 
-  it("prefers the static-host hint on GitHub Pages", () => {
-    expect(getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: true }, 10, "0x4d44.github.io")).toBe(
-      null
-    );
+  it("returns the same zoom hint on static hosts because aircraft traffic stays browser-side", () => {
+    expect(
+      getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: true }, MIN_LIVE_TRAFFIC_ZOOM - 0.5, "0x4d44.github.io")
+    ).toBe("Zoom in past 5 to activate live traffic.");
   });
 });
 
