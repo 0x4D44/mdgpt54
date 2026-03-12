@@ -119,8 +119,17 @@ export function formatAltitude(meters: number | null): string | null {
   return `${Math.round(meters)} m`;
 }
 
-export function formatAircraftAltitude(track: Pick<LiveTrack, "altitudeMeters" | "geoAltitudeMeters">): string | null {
-  return formatAltitude(track.geoAltitudeMeters ?? track.altitudeMeters);
+export function formatAircraftAltitude(
+  track: Pick<LiveTrack, "altitudeMeters" | "geoAltitudeMeters">,
+  includeSource: boolean = false
+): string | null {
+  const usesGeoAltitude = track.geoAltitudeMeters !== null && track.geoAltitudeMeters !== undefined;
+  const altitude = formatAltitude(usesGeoAltitude ? track.geoAltitudeMeters ?? null : track.altitudeMeters ?? null);
+  if (!altitude || !includeSource) {
+    return altitude;
+  }
+
+  return `${altitude} (${usesGeoAltitude ? "geo" : "baro"})`;
 }
 
 export function deriveFlightCode(callsign: string | null | undefined): string | null {

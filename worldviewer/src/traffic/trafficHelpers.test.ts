@@ -251,6 +251,11 @@ describe("formatAircraftAltitude", () => {
   it("falls back to barometric altitude when geometry is missing", () => {
     expect(formatAircraftAltitude({ altitudeMeters: 10000, geoAltitudeMeters: null })).toBe("10000 m");
   });
+
+  it("labels the altitude source when requested", () => {
+    expect(formatAircraftAltitude({ altitudeMeters: 10000, geoAltitudeMeters: 10120 }, true)).toBe("10120 m (geo)");
+    expect(formatAircraftAltitude({ altitudeMeters: 10000, geoAltitudeMeters: null }, true)).toBe("10000 m (baro)");
+  });
 });
 
 describe("deriveFlightCode", () => {

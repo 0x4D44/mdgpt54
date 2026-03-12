@@ -271,7 +271,7 @@ function buildAircraftPopupHtml(props: Record<string, unknown>, age: string): st
   const altitude = formatAircraftAltitude({
     altitudeMeters: readNumber(props.altitudeMeters),
     geoAltitudeMeters: readNumber(props.geoAltitudeMeters)
-  });
+  }, true);
 
   return buildPopupHtml("Aircraft", identity.title, identity.rows, compactText(speed, altitude, age));
 }
