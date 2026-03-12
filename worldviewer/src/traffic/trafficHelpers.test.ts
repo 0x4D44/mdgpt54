@@ -4,10 +4,15 @@ import {
   MIN_LIVE_TRAFFIC_ZOOM,
   STALE_THRESHOLD_MS,
   bboxFromBounds,
+  buildAircraftPopupIdentity,
   debounce,
+  deriveFlightCode,
   formatAge,
+  formatAircraftAltitude,
   formatAltitude,
   formatSpeed,
+  getAircraftCategoryLabel,
+  getAircraftVisualCategory,
   getTrafficClientHint,
   isStaticTrafficHost,
   isTrackStale,
@@ -91,7 +96,15 @@ describe("tracksToGeoJSON", () => {
 
   it("converts tracks to Point features with correct properties", () => {
     const now = 2000;
-    const track = makeTrack({ updatedAt: now, lng: 10.5, lat: 48.2 });
+    const track = makeTrack({
+      updatedAt: now,
+      lng: 10.5,
+      lat: 48.2,
+      callsign: "BAW123",
+      flightCode: "BAW 123",
+      aircraftCategory: 8,
+      geoAltitudeMeters: 10120
+    });
     const result = tracksToGeoJSON([track], now);
     expect(result.features).toHaveLength(1);
 
@@ -101,6 +114,15 @@ describe("tracksToGeoJSON", () => {
     expect(feature.properties?.kind).toBe("aircraft");
     expect(feature.properties?.heading).toBe(90);
     expect(feature.properties?.opacity).toBe(1);
+    expect(feature.properties?.callsign).toBe("BAW123");
+    expect(feature.properties?.flightCode).toBe("BAW 123");
+    expect(feature.properties?.aircraftCategory).toBe(8);
+    expect(feature.properties?.geoAltitudeMeters).toBe(10120);
+    expect(feature.properties?.aircraftVisualCategory).toBe("rotor");
+    expect(feature.properties).not.toHaveProperty("aircraftTypeCode");
+    expect(feature.properties).not.toHaveProperty("registration");
+    expect(feature.properties).not.toHaveProperty("manufacturer");
+    expect(feature.properties).not.toHaveProperty("model");
   });
 });
 
@@ -199,6 +221,120 @@ describe("isStaticTrafficHost", () => {
 
   it("does not treat localhost as a static host", () => {
     expect(isStaticTrafficHost("localhost")).toBe(false);
+  });
+});
+
+describe("formatAircraftAltitude", () => {
+  it("prefers geometric altitude when it is available", () => {
+    expect(formatAircraftAltitude({ altitudeMeters: 10000, geoAltitudeMeters: 10120 })).toBe("10120 m");
+  });
+
+  it("falls back to barometric altitude when geometry is missing", () => {
+    expect(formatAircraftAltitude({ altitudeMeters: 10000, geoAltitudeMeters: null })).toBe("10000 m");
+  });
+});
+
+describe("deriveFlightCode", () => {
+  it("formats matching callsigns using the exact HLD regex", () => {
+    expect(deriveFlightCode("BAW123")).toBe("BAW 123");
+    expect(deriveFlightCode("DAL7A")).toBe("DAL 7A");
+    expect(deriveFlightCode(" BAW123 ")).toBe("BAW 123");
+  });
+
+  it("rejects callsigns outside the exact HLD regex", () => {
+    expect(deriveFlightCode("baw123")).toBeNull();
+    expect(deriveFlightCode("BA123")).toBeNull();
+    expect(deriveFlightCode("BAW12345")).toBeNull();
+    expect(deriveFlightCode("BAW 123")).toBeNull();
+  });
+});
+
+describe("getAircraftVisualCategory", () => {
+  it("maps Step 1 categories into silhouette groups", () => {
+    expect(getAircraftVisualCategory(2)).toBe("light");
+    expect(getAircraftVisualCategory(4)).toBe("transport");
+    expect(getAircraftVisualCategory(7)).toBe("fast");
+    expect(getAircraftVisualCategory(8)).toBe("rotor");
+    expect(getAircraftVisualCategory(10)).toBe("glider");
+  });
+
+  it("falls back to the generic silhouette for unknown or missing categories", () => {
+    expect(getAircraftVisualCategory(0)).toBe("generic");
+    expect(getAircraftVisualCategory(1)).toBe("generic");
+    expect(getAircraftVisualCategory(null)).toBe("generic");
+    expect(getAircraftVisualCategory(undefined)).toBe("generic");
+    expect(getAircraftVisualCategory(99)).toBe("generic");
+  });
+});
+
+describe("getAircraftCategoryLabel", () => {
+  it("suppresses sentinel categories that should not appear in popups", () => {
+    expect(getAircraftCategoryLabel(0)).toBeNull();
+    expect(getAircraftCategoryLabel(1)).toBeNull();
+  });
+
+  it("returns labels for displayable categories", () => {
+    expect(getAircraftCategoryLabel(6)).toBe("Heavy");
+  });
+});
+
+describe("buildAircraftPopupIdentity", () => {
+  it("orders Step 1 aircraft identity as flight code, raw callsign, then category", () => {
+    expect(
+      buildAircraftPopupIdentity({
+        id: "abc123",
+        label: "BAW 123",
+        callsign: "BAW123",
+        flightCode: "BAW 123",
+        aircraftCategory: 6
+      })
+    ).toEqual({
+      title: "BAW 123",
+      rows: ["Callsign BAW123", "Category Heavy"]
+    });
+  });
+
+  it("falls back to the raw callsign without duplicating it", () => {
+    expect(
+      buildAircraftPopupIdentity({
+        id: "abc123",
+        label: "N123AB",
+        callsign: "N123AB",
+        flightCode: null,
+        aircraftCategory: 8
+      })
+    ).toEqual({
+      title: "N123AB",
+      rows: ["Category Rotorcraft"]
+    });
+  });
+
+  it("omits category rows for sentinel category values", () => {
+    expect(
+      buildAircraftPopupIdentity({
+        id: "abc123",
+        label: "BAW 123",
+        callsign: "BAW123",
+        flightCode: "BAW 123",
+        aircraftCategory: 0
+      })
+    ).toEqual({
+      title: "BAW 123",
+      rows: ["Callsign BAW123"]
+    });
+
+    expect(
+      buildAircraftPopupIdentity({
+        id: "abc123",
+        label: "BAW 123",
+        callsign: "BAW123",
+        flightCode: "BAW 123",
+        aircraftCategory: 1
+      })
+    ).toEqual({
+      title: "BAW 123",
+      rows: ["Callsign BAW123"]
+    });
   });
 });
 

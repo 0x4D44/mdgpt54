@@ -363,6 +363,23 @@ h2 {
   font-size: 0.85rem;
 }
 
+.popup-card .popup-kicker {
+  color: #6d839a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.popup-card .popup-identity {
+  color: #2a3d50;
+}
+
+.popup-card .popup-meta {
+  color: #5a6f83;
+  font-size: 0.8rem;
+}
+
 .maplibregl-popup-content {
   border-radius: 1rem;
   padding: 0.8rem 0.9rem;

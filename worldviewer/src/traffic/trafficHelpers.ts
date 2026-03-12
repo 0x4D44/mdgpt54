@@ -3,11 +3,35 @@ import type { Bbox, LiveTrack, SnapshotMessage } from "./trafficTypes";
 /** Stale threshold in milliseconds — tracks older than this get faded. */
 export const STALE_THRESHOLD_MS = 60_000;
 export const MIN_LIVE_TRAFFIC_ZOOM = 5;
+const FLIGHT_CODE_CALLSIGN_RE = /^([A-Z]{3})(\d{1,4}[A-Z]?)$/;
+const AIRCRAFT_CATEGORY_LABELS: Record<number, string> = {
+  2: "Light",
+  3: "Small",
+  4: "Large",
+  5: "High-vortex large",
+  6: "Heavy",
+  7: "High-performance",
+  8: "Rotorcraft",
+  9: "Glider / sailplane",
+  10: "Lighter-than-air",
+  11: "Parachutist",
+  12: "Ultralight",
+  13: "Reserved",
+  14: "UAV",
+  15: "Space vehicle",
+  16: "Emergency vehicle",
+  17: "Service vehicle",
+  18: "Point obstacle",
+  19: "Cluster obstacle",
+  20: "Line obstacle"
+};
 
 export type TrafficToggleState = {
   aircraftEnabled: boolean;
   shipsEnabled: boolean;
 };
+
+export type AircraftVisualCategory = "generic" | "light" | "transport" | "fast" | "rotor" | "glider";
 
 /** Extract a canonical [west, south, east, north] bbox from MapLibre bounds. */
 export function bboxFromBounds(bounds: {
@@ -51,6 +75,12 @@ export function tracksToGeoJSON(tracks: LiveTrack[], now: number): GeoJSON.Featu
         label: track.label,
         source: track.source,
         updatedAt: track.updatedAt,
+        callsign: track.callsign ?? null,
+        flightCode: track.flightCode ?? null,
+        aircraftCategory: track.aircraftCategory ?? null,
+        geoAltitudeMeters: track.geoAltitudeMeters ?? null,
+        aircraftVisualCategory:
+          track.kind === "aircraft" ? getAircraftVisualCategory(track.aircraftCategory ?? null) : null,
         opacity: trackOpacity(track, now)
       }
     }))
@@ -75,6 +105,81 @@ export function formatSpeed(knots: number | null): string | null {
 export function formatAltitude(meters: number | null): string | null {
   if (meters === null) return null;
   return `${Math.round(meters)} m`;
+}
+
+export function formatAircraftAltitude(track: Pick<LiveTrack, "altitudeMeters" | "geoAltitudeMeters">): string | null {
+  return formatAltitude(track.geoAltitudeMeters ?? track.altitudeMeters);
+}
+
+export function deriveFlightCode(callsign: string | null | undefined): string | null {
+  if (typeof callsign !== "string") {
+    return null;
+  }
+
+  const trimmed = callsign.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const match = FLIGHT_CODE_CALLSIGN_RE.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+
+  return `${match[1]} ${match[2]}`;
+}
+
+export function getAircraftCategoryLabel(category: number | null | undefined): string | null {
+  if (typeof category !== "number") {
+    return null;
+  }
+
+  return AIRCRAFT_CATEGORY_LABELS[category] ?? null;
+}
+
+export function getAircraftVisualCategory(category: number | null | undefined): AircraftVisualCategory {
+  switch (category) {
+    case 2:
+    case 3:
+    case 12:
+      return "light";
+    case 4:
+    case 5:
+    case 6:
+      return "transport";
+    case 7:
+      return "fast";
+    case 8:
+      return "rotor";
+    case 9:
+    case 10:
+    case 11:
+      return "glider";
+    default:
+      return "generic";
+  }
+}
+
+export function buildAircraftPopupIdentity(track: {
+  id: string;
+  label: string | null;
+  callsign?: string | null;
+  flightCode?: string | null;
+  aircraftCategory?: number | null;
+}): { title: string; rows: string[] } {
+  const title = firstText(track.flightCode, track.callsign, track.label, track.id) ?? track.id;
+  const rows: string[] = [];
+
+  if (hasText(track.callsign) && track.callsign !== title) {
+    rows.push(`Callsign ${track.callsign.trim()}`);
+  }
+
+  const categoryLabel = getAircraftCategoryLabel(track.aircraftCategory ?? null);
+  if (categoryLabel) {
+    rows.push(`Category ${categoryLabel}`);
+  }
+
+  return { title, rows };
 }
 
 /** Validate and parse a snapshot message from the relay. Returns null if invalid. */
@@ -130,4 +235,18 @@ export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number
     timer = setTimeout(() => fn(...args), ms);
   };
   return debounced as unknown as T;
+}
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function firstText(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    if (hasText(value)) {
+      return value.trim();
+    }
+  }
+
+  return null;
 }

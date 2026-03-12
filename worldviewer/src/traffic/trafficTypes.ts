@@ -14,6 +14,10 @@ export type LiveTrack = {
   label: string | null;
   source: "opensky" | "aisstream";
   updatedAt: number;
+  callsign?: string | null;
+  flightCode?: string | null;
+  aircraftCategory?: number | null;
+  geoAltitudeMeters?: number | null;
 };
 
 export type TrafficLayerStatusCode = "ok" | "zoom_in" | "unavailable";

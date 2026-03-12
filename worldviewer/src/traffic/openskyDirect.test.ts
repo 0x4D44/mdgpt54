@@ -7,7 +7,7 @@ describe("openSkyUrl", () => {
   it("maps canonical bbox order to OpenSky query params", () => {
     const bbox: Bbox = [-3.6, 55.8, -3.0, 56.1];
     expect(openSkyUrl(bbox)).toBe(
-      "https://opensky-network.org/api/states/all?lamin=55.8&lomin=-3.6&lamax=56.1&lomax=-3"
+      "https://opensky-network.org/api/states/all?lamin=55.8&lomin=-3.6&lamax=56.1&lomax=-3&extended=1"
     );
   });
 });
@@ -19,7 +19,7 @@ describe("parseOpenSkyStates", () => {
     expect(parseOpenSkyStates({ states: null })).toEqual([]);
   });
 
-  it("parses valid state vectors into aircraft tracks", () => {
+  it("parses the Step 1 OpenSky fields from extended state vectors", () => {
     const now = 1773360000000;
     const tracks = parseOpenSkyStates(
       {
@@ -35,7 +35,14 @@ describe("parseOpenSkyStates", () => {
             10000,
             false,
             250.5,
-            45.2
+            45.2,
+            null,
+            null,
+            10100,
+            null,
+            null,
+            null,
+            6
           ]
         ]
       },
@@ -50,11 +57,54 @@ describe("parseOpenSkyStates", () => {
       lat: 55.9,
       heading: 45.2,
       altitudeMeters: 10000,
-      label: "BAW123",
+      label: "BAW 123",
       source: "opensky",
-      updatedAt: now
+      updatedAt: now,
+      callsign: "BAW123",
+      flightCode: "BAW 123",
+      aircraftCategory: 6,
+      geoAltitudeMeters: 10100
     });
     expect(tracks[0].speedKnots).toBeCloseTo(486.9, 0);
+  });
+
+  it("only derives flight codes when the callsign matches the HLD regex", () => {
+    const now = 1773360000000;
+    const tracks = parseOpenSkyStates(
+      {
+        states: [
+          [
+            "abc123",
+            "N123AB ",
+            "United States",
+            1773360000,
+            1773360000,
+            -3.3,
+            55.9,
+            10000,
+            false,
+            250.5,
+            45.2,
+            null,
+            null,
+            10100,
+            null,
+            null,
+            null,
+            2
+          ]
+        ]
+      },
+      now
+    );
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]).toMatchObject({
+      callsign: "N123AB",
+      flightCode: null,
+      label: "N123AB",
+      aircraftCategory: 2
+    });
   });
 
   it("skips entries without a valid position", () => {
