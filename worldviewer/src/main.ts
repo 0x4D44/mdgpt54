@@ -1,4 +1,5 @@
 import "./style.css";
+import { escapeHtml } from "./escapeHtml";
 import mlcontour from "maplibre-contour";
 import maplibregl, {
   type StyleSpecification,
@@ -24,6 +25,23 @@ import {
   getTerrainExaggeration,
   normalizeTerrainElevation
 } from "./reliefProfile";
+import { TrafficClient } from "./traffic/trafficClient";
+import {
+  addTrafficLayers,
+  clearAircraftData,
+  clearShipsData,
+  clearTrafficData,
+  updateTrafficData
+} from "./traffic/trafficLayers";
+import {
+  createTrafficUI,
+  updateLayerAvailability,
+  updateLayerStatusHints,
+  updateTrafficCredit,
+  updateTrafficStatus,
+  type TrafficUIElements
+} from "./traffic/trafficUI";
+import type { SnapshotStatus } from "./traffic/trafficTypes";
 
 type Preset = {
   id: string;
@@ -332,6 +350,7 @@ async function bootstrap(): Promise<void> {
     wireSearch();
     wirePresets();
     wireToggles();
+    wireTraffic(map);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load the globe.";
     statusPill.textContent = message;
@@ -802,6 +821,113 @@ function wireToggles(): void {
   });
 }
 
+function wireTraffic(mapInstance: Map): void {
+  const controlDock = document.querySelector<HTMLElement>(".control-dock");
+  if (!controlDock) return;
+
+  const ui: TrafficUIElements = createTrafficUI(controlDock);
+  let connectionStatus: "connecting" | "connected" | "disconnected" = "disconnected";
+  let lastStatus: SnapshotStatus = {
+    aircraft: { code: "ok", message: null },
+    ships: { code: "ok", message: null }
+  };
+
+  const syncUI = () => {
+    updateTrafficStatus(ui, connectionStatus, client.state.aircraftEnabled, client.state.shipsEnabled);
+    updateTrafficCredit(ui, client.state.aircraftEnabled, client.state.shipsEnabled);
+    updateLayerStatusHints(
+      ui,
+      lastStatus,
+      client.state.aircraftEnabled,
+      client.state.shipsEnabled,
+      client.getLowZoomHint()
+    );
+  };
+
+  const client = new TrafficClient(mapInstance, {
+    onSnapshot: (snapshot) => {
+      lastStatus = snapshot.status;
+      updateTrafficData(mapInstance, snapshot);
+      updateLayerAvailability(ui, snapshot.status);
+      updateLayerStatusHints(
+        ui,
+        snapshot.status,
+        client.state.aircraftEnabled,
+        client.state.shipsEnabled,
+        client.getLowZoomHint()
+      );
+
+      // Auto-disable layers that became unavailable
+      let layersChanged = false;
+      if (snapshot.status.aircraft.code === "unavailable" && client.state.aircraftEnabled) {
+        client.state.aircraftEnabled = false;
+        ui.aircraftToggle.classList.remove("is-active");
+        clearAircraftData(mapInstance);
+        layersChanged = true;
+      }
+      if (snapshot.status.ships.code === "unavailable" && client.state.shipsEnabled) {
+        client.state.shipsEnabled = false;
+        ui.shipsToggle.classList.remove("is-active");
+        clearShipsData(mapInstance);
+        layersChanged = true;
+      }
+      if (layersChanged) {
+        client.sendSubscribe();
+        syncUI();
+      }
+    },
+    onStatusChange: (status) => {
+      connectionStatus = status;
+      updateTrafficStatus(ui, connectionStatus, client.state.aircraftEnabled, client.state.shipsEnabled);
+    }
+  });
+
+  const handleToggle = (toggle: "aircraft" | "ships") => {
+    if (toggle === "aircraft") {
+      if (ui.aircraftToggle.disabled) return;
+      client.state.aircraftEnabled = !client.state.aircraftEnabled;
+      ui.aircraftToggle.classList.toggle("is-active", client.state.aircraftEnabled);
+      if (!client.state.aircraftEnabled) clearAircraftData(mapInstance);
+    } else {
+      if (ui.shipsToggle.disabled) return;
+      client.state.shipsEnabled = !client.state.shipsEnabled;
+      ui.shipsToggle.classList.toggle("is-active", client.state.shipsEnabled);
+      if (!client.state.shipsEnabled) clearShipsData(mapInstance);
+    }
+
+    client.setLayers(client.state.aircraftEnabled, client.state.shipsEnabled);
+    syncUI();
+
+    if (!client.state.aircraftEnabled && !client.state.shipsEnabled) {
+      clearTrafficData(mapInstance);
+    }
+  };
+
+  ui.aircraftToggle.addEventListener("click", () => handleToggle("aircraft"));
+  ui.shipsToggle.addEventListener("click", () => handleToggle("ships"));
+
+  // Add traffic sources/layers once style is loaded
+  const addLayers = () => {
+    if (!mapInstance.getSource("live-aircraft")) {
+      addTrafficLayers(mapInstance);
+    }
+  };
+
+  if (mapInstance.isStyleLoaded()) {
+    addLayers();
+  } else {
+    mapInstance.on("load", addLayers);
+  }
+
+  // Send debounced subscribe on moveend
+  mapInstance.on("moveend", () => {
+    if (client.state.aircraftEnabled || client.state.shipsEnabled) {
+      client.debouncedSubscribe();
+    }
+    syncUI();
+  });
+}
+
 function renderSearchResults(results: SearchResult[]): void {
   const mapInstance = map;
   if (!mapInstance) {
@@ -1167,11 +1293,3 @@ function formatCoordinates(lat: number, lng: number): string {
   return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
