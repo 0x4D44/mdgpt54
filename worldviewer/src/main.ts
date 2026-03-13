@@ -26,6 +26,10 @@ import {
   normalizeTerrainElevation
 } from "./reliefProfile";
 import { createSolarTerminatorOverlay } from "./overlays/solarTerminator";
+import {
+  createWeatherRadarOverlay,
+  type WeatherRadarPresentation
+} from "./overlays/weatherRadar";
 import { TrafficClient } from "./traffic/trafficClient";
 import { Aircraft3dController } from "./traffic/aircraft3dLayer";
 import {
@@ -68,6 +72,7 @@ type MapState = {
   buildingsEnabled: boolean;
   reliefEnabled: boolean;
   nightEnabled: boolean;
+  weatherEnabled: boolean;
   autoSpinEnabled: boolean;
   userInteracting: boolean;
   stressModeActive: boolean;
@@ -283,6 +288,7 @@ app.innerHTML = `
           <button type="button" class="toggle-chip is-active" data-toggle="terrain">Terrain</button>
           <button type="button" class="toggle-chip is-active" data-toggle="relief">Relief</button>
           <button type="button" class="toggle-chip is-active" data-toggle="night">Night</button>
+          <button type="button" class="toggle-chip" data-toggle="weather">Weather</button>
           <button type="button" class="toggle-chip is-active" data-toggle="buildings">3D Buildings</button>
           <button type="button" class="toggle-chip is-active" data-toggle="spin">Orbit Spin</button>
         </div>
@@ -356,12 +362,23 @@ const sceneOverlayCredit = document.querySelector<HTMLElement>("#scene-overlay-c
 const presetButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-preset]"));
 const toggleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-toggle]"));
 const solarTerminator = createSolarTerminatorOverlay();
+let weatherRadarPresentation: WeatherRadarPresentation = {
+  note: null,
+  creditLabel: null
+};
+const weatherRadar = createWeatherRadarOverlay({
+  onStateChange: (presentation) => {
+    weatherRadarPresentation = presentation;
+    renderSceneOverlayPresentation();
+  }
+});
 
 const mapState: MapState = {
   terrainEnabled: true,
   buildingsEnabled: true,
   reliefEnabled: true,
   nightEnabled: true,
+  weatherEnabled: false,
   autoSpinEnabled: true,
   userInteracting: false,
   stressModeActive: false,
@@ -875,6 +892,12 @@ function wireToggles(): void {
           syncSceneOverlays(mapInstance);
           statusPill.textContent = mapState.nightEnabled ? "Night overlay enabled." : "Night overlay hidden.";
           break;
+        case "weather":
+          mapState.weatherEnabled = !mapState.weatherEnabled;
+          button.classList.toggle("is-active", mapState.weatherEnabled);
+          syncSceneOverlays(mapInstance);
+          statusPill.textContent = mapState.weatherEnabled ? "Weather radar enabled." : "Weather radar hidden.";
+          break;
         case "spin":
           mapState.autoSpinEnabled = !mapState.autoSpinEnabled;
           button.classList.toggle("is-active", mapState.autoSpinEnabled);
@@ -891,14 +914,33 @@ function wireToggles(): void {
 }
 
 function syncSceneOverlays(mapInstance: Map): void {
+  if (mapState.nightEnabled) {
+    solarTerminator.enable(mapInstance);
+  } else {
+    solarTerminator.disable(mapInstance);
+  }
+
+  if (mapState.weatherEnabled) {
+    weatherRadar.enable(mapInstance);
+  } else {
+    weatherRadar.disable(mapInstance);
+  }
+
+  renderSceneOverlayPresentation();
+}
+
+function renderSceneOverlayPresentation(): void {
   const notes: string[] = [];
   const credits: string[] = [];
 
   if (mapState.nightEnabled) {
-    solarTerminator.enable(mapInstance);
     notes.push("Night hemisphere fades out by zoom 6.");
-  } else {
-    solarTerminator.disable(mapInstance);
+  }
+  if (weatherRadarPresentation.note) {
+    notes.push(weatherRadarPresentation.note);
+  }
+  if (weatherRadarPresentation.creditLabel) {
+    credits.push(weatherRadarPresentation.creditLabel);
   }
 
   sceneOverlayNote.hidden = notes.length === 0;
