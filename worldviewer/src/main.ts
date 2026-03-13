@@ -25,6 +25,7 @@ import {
   getTerrainExaggeration,
   normalizeTerrainElevation
 } from "./reliefProfile";
+import { createSolarTerminatorOverlay } from "./overlays/solarTerminator";
 import { TrafficClient } from "./traffic/trafficClient";
 import { Aircraft3dController } from "./traffic/aircraft3dLayer";
 import {
@@ -66,6 +67,7 @@ type MapState = {
   terrainEnabled: boolean;
   buildingsEnabled: boolean;
   reliefEnabled: boolean;
+  nightEnabled: boolean;
   autoSpinEnabled: boolean;
   userInteracting: boolean;
   stressModeActive: boolean;
@@ -167,34 +169,54 @@ const PRESETS: Preset[] = [
     bearing: -10
   },
   {
-    id: "nyc",
-    label: "Manhattan",
-    caption: "Dense buildings and block-level street context.",
-    lng: -73.98565,
-    lat: 40.74844,
-    zoom: 16.25,
+    id: "edinburgh",
+    label: "Edinburgh",
+    caption: "Castle ridge, Old Town density, Firth coastline.",
+    lng: -3.1883,
+    lat: 55.9533,
+    zoom: 14.8,
+    pitch: 68,
+    bearing: -20
+  },
+  {
+    id: "oxford",
+    label: "Oxford",
+    caption: "Historic college quads and the Thames meadows.",
+    lng: -1.2578,
+    lat: 51.752,
+    zoom: 15.2,
+    pitch: 72,
+    bearing: 30
+  },
+  {
+    id: "enfield",
+    label: "Enfield",
+    caption: "North London suburbs meeting green belt.",
+    lng: -0.0824,
+    lat: 51.6522,
+    zoom: 14,
+    pitch: 65,
+    bearing: 10
+  },
+  {
+    id: "seattle",
+    label: "Seattle",
+    caption: "Puget Sound waterfront with Cascade backdrop.",
+    lng: -122.3321,
+    lat: 47.6062,
+    zoom: 14.6,
     pitch: 74,
-    bearing: 15
+    bearing: -15
   },
   {
     id: "tokyo",
     label: "Tokyo",
     caption: "Urban scale with terrain and dense road labels.",
-    lng: 139.75914,
-    lat: 35.68284,
+    lng: 139.7591,
+    lat: 35.6828,
     zoom: 15.6,
     pitch: 70,
     bearing: 36
-  },
-  {
-    id: "rio",
-    label: "Rio",
-    caption: "A terrain-heavy city flyover near the coast.",
-    lng: -43.1729,
-    lat: -22.9068,
-    zoom: 14.4,
-    pitch: 78,
-    bearing: 146
   }
 ];
 
@@ -260,9 +282,12 @@ app.innerHTML = `
         <div class="toggle-grid">
           <button type="button" class="toggle-chip is-active" data-toggle="terrain">Terrain</button>
           <button type="button" class="toggle-chip is-active" data-toggle="relief">Relief</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="night">Night</button>
           <button type="button" class="toggle-chip is-active" data-toggle="buildings">3D Buildings</button>
           <button type="button" class="toggle-chip is-active" data-toggle="spin">Orbit Spin</button>
         </div>
+        <p id="scene-overlay-note" class="scene-overlay-note" hidden></p>
+        <p id="scene-overlay-credit" class="scene-overlay-credit" hidden></p>
       </section>
 
       <section class="metric-section">
@@ -326,13 +351,17 @@ const metricPitch = document.querySelector<HTMLElement>("#metric-pitch")!;
 const metricTerrain = document.querySelector<HTMLElement>("#metric-terrain")!;
 const controlDock = document.querySelector<HTMLElement>("#control-dock")!;
 const dockToggle = document.querySelector<HTMLButtonElement>("#dock-toggle")!;
+const sceneOverlayNote = document.querySelector<HTMLElement>("#scene-overlay-note")!;
+const sceneOverlayCredit = document.querySelector<HTMLElement>("#scene-overlay-credit")!;
 const presetButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-preset]"));
 const toggleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-toggle]"));
+const solarTerminator = createSolarTerminatorOverlay();
 
 const mapState: MapState = {
   terrainEnabled: true,
   buildingsEnabled: true,
   reliefEnabled: true,
+  nightEnabled: true,
   autoSpinEnabled: true,
   userInteracting: false,
   stressModeActive: false,
@@ -364,6 +393,7 @@ async function bootstrap(): Promise<void> {
     wireSearch();
     wirePresets();
     wireToggles();
+    syncSceneOverlays(map);
     wireTraffic(map);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load the globe.";
@@ -839,6 +869,12 @@ function wireToggles(): void {
           statusPill.textContent = mapState.buildingsEnabled ? "3D buildings enabled." : "Buildings hidden.";
           syncViewState(mapInstance);
           break;
+        case "night":
+          mapState.nightEnabled = !mapState.nightEnabled;
+          button.classList.toggle("is-active", mapState.nightEnabled);
+          syncSceneOverlays(mapInstance);
+          statusPill.textContent = mapState.nightEnabled ? "Night overlay enabled." : "Night overlay hidden.";
+          break;
         case "spin":
           mapState.autoSpinEnabled = !mapState.autoSpinEnabled;
           button.classList.toggle("is-active", mapState.autoSpinEnabled);
@@ -852,6 +888,23 @@ function wireToggles(): void {
       }
     });
   });
+}
+
+function syncSceneOverlays(mapInstance: Map): void {
+  const notes: string[] = [];
+  const credits: string[] = [];
+
+  if (mapState.nightEnabled) {
+    solarTerminator.enable(mapInstance);
+    notes.push("Night hemisphere fades out by zoom 6.");
+  } else {
+    solarTerminator.disable(mapInstance);
+  }
+
+  sceneOverlayNote.hidden = notes.length === 0;
+  sceneOverlayNote.textContent = notes.join(" | ");
+  sceneOverlayCredit.hidden = credits.length === 0;
+  sceneOverlayCredit.textContent = credits.length === 0 ? "" : `Overlays: ${credits.join(", ")}.`;
 }
 
 function wireTraffic(mapInstance: Map): void {

@@ -163,6 +163,8 @@ button {
 
 .eyebrow,
 .credit-note,
+.scene-overlay-note,
+.scene-overlay-credit,
 .section-head span,
 .search-message,
 .preset-card span,
@@ -197,7 +199,9 @@ h2 {
 }
 
 .lede,
-.credit-note {
+.credit-note,
+.scene-overlay-note,
+.scene-overlay-credit {
   margin: 0;
 }
 
@@ -462,6 +466,12 @@ h2 {
   margin: 0;
   font-size: 0.78rem;
   color: var(--gold);
+  line-height: 1.45;
+}
+
+.scene-overlay-note,
+.scene-overlay-credit {
+  font-size: 0.78rem;
   line-height: 1.45;
 }
 
