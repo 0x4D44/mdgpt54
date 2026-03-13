@@ -283,6 +283,71 @@ describe("weatherRadar", () => {
     });
   });
 
+  it("waits for the first style load before fetching and adding the overlay", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: {
+          past: [{ time: 1_763_000_000, path: "/v2/radar/1" }]
+        }
+      })
+    );
+    const onStateChange = vi.fn();
+    const map = new MockMap();
+    map.styleLoaded = false;
+    const overlay = createWeatherRadarOverlay({
+      fetchImpl,
+      onStateChange
+    });
+
+    overlay.enable(map as never);
+    await flushAsyncWork();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(map.addSource).not.toHaveBeenCalled();
+    expect(map.addLayer).not.toHaveBeenCalled();
+    expect(onStateChange).not.toHaveBeenCalled();
+
+    map.emitLoad();
+    await flushAsyncWork();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(map.addSource).toHaveBeenCalledTimes(1);
+    expect(map.addLayer).toHaveBeenCalledTimes(1);
+    expect(onStateChange).toHaveBeenLastCalledWith({
+      note: formatWeatherRadarStatus(1_763_000_000),
+      creditLabel: WEATHER_RADAR_CREDIT_LABEL
+    });
+  });
+
+  it("cancels the pending load path when disabled before style load", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: {
+          past: [{ time: 1_763_000_000, path: "/v2/radar/1" }]
+        }
+      })
+    );
+    const onStateChange = vi.fn();
+    const map = new MockMap();
+    map.styleLoaded = false;
+    const overlay = createWeatherRadarOverlay({
+      fetchImpl,
+      onStateChange
+    });
+
+    overlay.enable(map as never);
+    overlay.disable(map as never);
+    map.emitLoad();
+    await flushAsyncWork();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(map.addSource).not.toHaveBeenCalled();
+    expect(map.addLayer).not.toHaveBeenCalled();
+    expect(onStateChange).not.toHaveBeenCalled();
+  });
+
   it("ignores stale async completions after disable while fetching", async () => {
     let resolveResponse: ((response: ReturnType<typeof createJsonResponse>) => void) | null = null;
     const fetchImpl = vi.fn(
