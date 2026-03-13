@@ -15,6 +15,11 @@ import {
   shouldUsePerformanceMode
 } from "./detailProfile";
 import {
+  resolveProjectionMode,
+  shouldShowNightOverlay,
+  type ProjectionMode
+} from "./projectionBehavior";
+import {
   CONTOUR_THRESHOLDS,
   CONTOUR_SOURCE_ID,
   RELIEF_DEM_SOURCE_ID,
@@ -77,7 +82,7 @@ type MapState = {
   userInteracting: boolean;
   stressModeActive: boolean;
   terrainExaggeration: number;
-  projectionMode: "globe" | "mercator";
+  projectionMode: ProjectionMode;
 };
 
 type StyleSource = {
@@ -124,8 +129,6 @@ const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const MAX_SPIN_ZOOM = 4.8;
 const SLOW_SPIN_ZOOM = 2.8;
 const SECONDS_PER_REVOLUTION = 170;
-const MERCATOR_SWITCH_ZOOM = 6;
-const GLOBE_RETURN_ZOOM = 5;
 const BUILDING_LAYER_ID = "building-3d";
 const FLAT_BUILDING_LAYER_ID = "building";
 const HILLSHADE_LAYER_ID = "terrain-hillshade";
@@ -914,7 +917,7 @@ function wireToggles(): void {
 }
 
 function syncSceneOverlays(mapInstance: Map): void {
-  if (mapState.nightEnabled) {
+  if (shouldShowNightOverlay(mapState.nightEnabled, mapState.projectionMode)) {
     solarTerminator.enable(mapInstance);
   } else {
     solarTerminator.disable(mapInstance);
@@ -933,8 +936,8 @@ function renderSceneOverlayPresentation(): void {
   const notes: string[] = [];
   const credits: string[] = [];
 
-  if (mapState.nightEnabled) {
-    notes.push("Night hemisphere fades out by zoom 6.");
+  if (shouldShowNightOverlay(mapState.nightEnabled, mapState.projectionMode)) {
+    notes.push("Night hemisphere shows on globe and fades out by zoom 6.");
   }
   if (weatherRadarPresentation.note) {
     notes.push(weatherRadarPresentation.note);
@@ -1245,14 +1248,7 @@ function currentTerrainOptions(mapInstance: Map): { source: string; exaggeration
 }
 
 function updateProjectionMode(mapInstance: Map): void {
-  const zoom = mapInstance.getZoom();
-  let nextProjection = mapState.projectionMode;
-
-  if (zoom >= MERCATOR_SWITCH_ZOOM) {
-    nextProjection = "mercator";
-  } else if (zoom <= GLOBE_RETURN_ZOOM) {
-    nextProjection = "globe";
-  }
+  const nextProjection = resolveProjectionMode(mapInstance.getZoom(), mapState.projectionMode);
 
   if (nextProjection === mapState.projectionMode) {
     return;
@@ -1260,6 +1256,7 @@ function updateProjectionMode(mapInstance: Map): void {
 
   mapState.projectionMode = nextProjection;
   mapInstance.setProjection({ type: nextProjection });
+  syncSceneOverlays(mapInstance);
 }
 
 function updateDetailProfile(mapInstance: Map): void {
