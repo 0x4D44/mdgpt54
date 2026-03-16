@@ -1,0 +1,27 @@
+services:
+  relay:
+    build:
+      context: .
+      target: relay
+    environment:
+      - AISSTREAM_API_KEY=${AISSTREAM_API_KEY:-}
+      - TRAFFIC_PORT=3210
+    expose:
+      - "3210"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3210/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - relay
+    restart: unless-stopped
