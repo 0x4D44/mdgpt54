@@ -10,7 +10,7 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAX_BROWSER_ZOOM } from "./detailProfile";
-import { getTerrainExaggeration } from "./reliefProfile";
+import { getTerrainExaggeration, normalizeTerrainElevation } from "./reliefProfile";
 import { createSolarTerminatorOverlay } from "./overlays/solarTerminator";
 import {
   createWeatherRadarOverlay,
@@ -59,6 +59,7 @@ import {
 } from "./cameraHash";
 import { debounce } from "./traffic/trafficHelpers";
 import { createKeydownHandler } from "./keyboardNav";
+import { createReadoutController, formatForClipboard } from "./coordinateReadout";
 
 type Preset = {
   id: string;
@@ -264,6 +265,7 @@ app.innerHTML = `
     </button>
 
     <div id="status-pill" class="status-pill">Loading open Earth layers...</div>
+    <div id="coord-readout" class="coord-readout" hidden></div>
   </div>
 `;
 
@@ -273,6 +275,7 @@ const searchForm = document.querySelector<HTMLFormElement>("#search-form")!;
 const searchInput = document.querySelector<HTMLInputElement>("#search-input")!;
 const searchMessage = document.querySelector<HTMLParagraphElement>("#search-message")!;
 const searchResults = document.querySelector<HTMLDivElement>("#search-results")!;
+const coordReadout = document.querySelector<HTMLDivElement>("#coord-readout")!;
 const metricMode = document.querySelector<HTMLElement>("#metric-mode")!;
 const metricZoom = document.querySelector<HTMLElement>("#metric-zoom")!;
 const metricAltitude = document.querySelector<HTMLElement>("#metric-altitude")!;
@@ -604,6 +607,39 @@ function wireMap(mapInstance: Map): void {
 
   mapInstance.on("error", () => {
     statusPill.textContent = "Some external map tiles failed to load. The globe will keep trying.";
+  });
+
+  // Coordinate readout: show lat/lng + elevation under cursor
+  let readoutRevealed = false;
+  let lastCursorLat = 0;
+  let lastCursorLng = 0;
+  const readoutController = createReadoutController({
+    getElevation: (lngLat) => {
+      if (!mapState.terrainEnabled) return null;
+      const raw = mapInstance.queryTerrainElevation(lngLat);
+      if (raw === null) return null;
+      return normalizeTerrainElevation(raw, mapState.terrainExaggeration);
+    },
+    onUpdate: (text) => {
+      coordReadout.textContent = text;
+    }
+  });
+
+  mapInstance.on("mousemove", (event) => {
+    if (!readoutRevealed) {
+      readoutRevealed = true;
+      coordReadout.hidden = false;
+    }
+    lastCursorLat = event.lngLat.lat;
+    lastCursorLng = event.lngLat.lng;
+    readoutController.handleMouseMove(event);
+  });
+
+  coordReadout.addEventListener("click", () => {
+    const text = formatForClipboard(lastCursorLat, lastCursorLng);
+    void navigator.clipboard.writeText(text).then(() => {
+      statusPill.textContent = "Copied!";
+    });
   });
 }
 
