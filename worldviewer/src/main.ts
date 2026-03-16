@@ -60,6 +60,7 @@ import {
 import { debounce } from "./traffic/trafficHelpers";
 import { createKeydownHandler } from "./keyboardNav";
 import { createReadoutController, formatForClipboard } from "./coordinateReadout";
+import { loadBookmarks, saveBookmarks, createBookmark, removeBookmark, MAX_BOOKMARKS } from "./bookmarks";
 
 type Preset = {
   id: string;
@@ -185,7 +186,7 @@ app.innerHTML = `
       <section class="preset-section">
         <div class="section-head">
           <h2>Launch Views</h2>
-          <span>Fast camera jumps</span>
+          <button id="save-view-btn" type="button" class="save-view-btn">Save View</button>
         </div>
         <div class="preset-grid">
           ${PRESETS.map(
@@ -285,6 +286,8 @@ const controlDock = document.querySelector<HTMLElement>("#control-dock")!;
 const dockToggle = document.querySelector<HTMLButtonElement>("#dock-toggle")!;
 const sceneOverlayNote = document.querySelector<HTMLElement>("#scene-overlay-note")!;
 const sceneOverlayCredit = document.querySelector<HTMLElement>("#scene-overlay-credit")!;
+const presetGrid = document.querySelector<HTMLDivElement>(".preset-grid")!;
+const saveViewBtn = document.querySelector<HTMLButtonElement>("#save-view-btn")!;
 const presetButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-preset]"));
 const toggleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-toggle]"));
 const metricElements: MetricElements = {
@@ -401,6 +404,7 @@ async function bootstrap(): Promise<void> {
       searchRequests
     });
     wirePresets();
+    wireBookmarks();
     wireToggles();
     syncSceneOverlays(map, sceneSyncDeps);
     wireTraffic(map);
@@ -665,6 +669,80 @@ function wirePresets(): void {
       });
     });
   });
+}
+
+function wireBookmarks(): void {
+  let bookmarks = loadBookmarks();
+
+  const renderBookmarkCards = () => {
+    // Remove existing bookmark cards
+    presetGrid.querySelectorAll("[data-bookmark-id]").forEach((el) => el.remove());
+
+    for (const bm of bookmarks) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "preset-card";
+      card.setAttribute("data-bookmark-id", bm.id);
+      card.innerHTML =
+        `<strong>${escapeHtml(bm.label)}</strong>` +
+        `<span>${escapeHtml(bm.caption)}</span>` +
+        `<button type="button" class="bookmark-delete" aria-label="Delete bookmark">\u00d7</button>`;
+
+      // Click card → fly to bookmark
+      card.addEventListener("click", () => {
+        if (!map) return;
+        statusPill.textContent = `Flying to ${escapeHtml(bm.label)}...`;
+        activePopup?.remove();
+        map.flyTo({
+          center: [bm.lng, bm.lat],
+          zoom: bm.zoom,
+          pitch: bm.pitch,
+          bearing: bm.bearing,
+          speed: 0.85,
+          curve: 1.32,
+          essential: true
+        });
+      });
+
+      // Delete button
+      const deleteBtn = card.querySelector<HTMLButtonElement>(".bookmark-delete")!;
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        bookmarks = removeBookmark(bookmarks, bm.id);
+        saveBookmarks(bookmarks);
+        renderBookmarkCards();
+      });
+
+      presetGrid.appendChild(card);
+    }
+  };
+
+  saveViewBtn.addEventListener("click", () => {
+    if (!map) return;
+    const name = window.prompt("Bookmark name:");
+    if (!name || !name.trim()) return;
+
+    const center = map.getCenter();
+    const bm = createBookmark(name.trim(), {
+      lng: center.lng,
+      lat: center.lat,
+      zoom: map.getZoom(),
+      pitch: map.getPitch(),
+      bearing: map.getBearing()
+    });
+
+    if (bookmarks.length >= MAX_BOOKMARKS) {
+      statusPill.textContent = `Bookmark limit (${MAX_BOOKMARKS}) reached.`;
+      return;
+    }
+
+    bookmarks = [...bookmarks, bm];
+    saveBookmarks(bookmarks);
+    renderBookmarkCards();
+    statusPill.textContent = `Saved "${escapeHtml(bm.label)}".`;
+  });
+
+  renderBookmarkCards();
 }
 
 function wireToggles(): void {
