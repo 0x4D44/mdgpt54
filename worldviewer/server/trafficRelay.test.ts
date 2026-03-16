@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket as RealWebSocket } from "ws";
 
 import { createTrafficRelayApp, startTrafficRelayServer } from "./trafficRelay";
+import type { HealthStatus } from "./trafficRelay";
 import type { Bbox, SnapshotMessage } from "../src/traffic/trafficTypes";
 
 type SocketListener = (...args: unknown[]) => void;
@@ -906,6 +907,96 @@ describe("startTrafficRelayServer", () => {
       const body = await response.text();
       expect(response.status).toBe(200);
       expect(body).toBe("worldviewer traffic relay");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("GET /health returns JSON with the expected shape", async () => {
+    const server = startTrafficRelayServer(0, {
+      shipsApiKey: null,
+      log: quietLog,
+    });
+
+    try {
+      if (!server.httpServer.listening) {
+        await once(server.httpServer, "listening");
+      }
+
+      const address = server.httpServer.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected the relay server to listen on a TCP port.");
+      }
+
+      const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/json");
+
+      const body: HealthStatus = await response.json();
+      expect(body.clients).toBe(0);
+      expect(body.activeShipBbox).toBeNull();
+      expect(body.shipTracks).toBe(0);
+      expect(typeof body.uptime).toBe("number");
+      expect(body.uptime).toBeGreaterThan(0);
+      expect(typeof body.memoryMB).toBe("number");
+      expect(body.memoryMB).toBeGreaterThan(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("GET /health reflects connected clients", async () => {
+    const server = startTrafficRelayServer(0, {
+      shipsApiKey: null,
+      log: quietLog,
+    });
+
+    try {
+      if (!server.httpServer.listening) {
+        await once(server.httpServer, "listening");
+      }
+
+      const address = server.httpServer.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected the relay server to listen on a TCP port.");
+      }
+
+      const client = new RealWebSocket(`ws://127.0.0.1:${address.port}/traffic`);
+      try {
+        await withTimeout(once(client, "open"), 1_000, "Expected client to connect.");
+
+        const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+        const body: HealthStatus = await response.json();
+        expect(body.clients).toBe(1);
+      } finally {
+        if (client.readyState === RealWebSocket.CONNECTING || client.readyState === RealWebSocket.OPEN) {
+          client.terminate();
+        }
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("GET /other still returns the plain text fallback", async () => {
+    const server = startTrafficRelayServer(0, {
+      shipsApiKey: null,
+      log: quietLog,
+    });
+
+    try {
+      if (!server.httpServer.listening) {
+        await once(server.httpServer, "listening");
+      }
+
+      const address = server.httpServer.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected the relay server to listen on a TCP port.");
+      }
+
+      const response = await fetch(`http://127.0.0.1:${address.port}/other`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("worldviewer traffic relay");
     } finally {
       await server.close();
     }
