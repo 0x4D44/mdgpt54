@@ -1603,12 +1603,12 @@ describe("TrafficClient", () => {
           })
         };
       }
-      // Identity shard - return data that will merge into the track
+      // Identity shard - tuple format: [registration, typeCode, manufacturer, model]
       if (typeof url === "string" && url.includes("aircraft-identity")) {
         return {
           ok: true,
           json: async () => ({
-            abc123: { typeCode: "B738", registration: "G-TEST", manufacturer: "Boeing", model: "737-800" }
+            abc123: ["G-TEST", "B738", "Boeing", "737-800"]
           })
         };
       }
@@ -1616,22 +1616,23 @@ describe("TrafficClient", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const snapshots: Array<{ aircraft: Array<{ registration?: string }> }> = [];
+    const snapshots: Array<{ aircraft: Array<{ registration?: string | null }> }> = [];
     const client = new TrafficClient(createMapStub() as never, {
-      onSnapshot: (s) => snapshots.push({ aircraft: s.aircraft as Array<{ registration?: string }> }),
+      onSnapshot: (s) => snapshots.push({ aircraft: s.aircraft as Array<{ registration?: string | null }> }),
       onStatusChange: vi.fn()
     });
 
     client.setLayers(true, false);
     // Wait for opensky fetch, identity fetch, and refresh
-    await flushAsyncWork();
-    await flushAsyncWork();
-    await flushAsyncWork();
-    await flushAsyncWork();
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
 
     // The last snapshot should have the merged identity data
     const lastAircraft = snapshots.at(-1)?.aircraft;
     expect(lastAircraft).toHaveLength(1);
+    // The identity merge should have set the registration
+    expect(lastAircraft![0].registration).toBe("G-TEST");
 
     client.dispose();
   });
@@ -1733,6 +1734,191 @@ describe("TrafficClient", () => {
 
     // Aircraft should be empty because zoom went below minimum
     expect(snapshots.at(-1)?.aircraft).toEqual([]);
+
+    client.dispose();
+  });
+
+  it("reconnect timer fires but connectRelay bails when zoom dropped", () => {
+    vi.useFakeTimers();
+
+    let currentZoom = 8;
+    const mapStub = {
+      getZoom: () => currentZoom,
+      getBounds: () => ({
+        getWest: () => -3.6,
+        getSouth: () => 55.8,
+        getEast: () => -3.0,
+        getNorth: () => 56.1
+      })
+    };
+
+    const client = new TrafficClient(mapStub as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(false, true);
+    const socket = MockWebSocket.instances[0];
+    socket.emit("open");
+    socket.emit("close");
+
+    // Reconnect timer is scheduled. Drop zoom below minimum before it fires
+    currentZoom = 2;
+
+    vi.advanceTimersByTime(2000);
+
+    // connectRelay should have bailed because isShipRelayActive returns false
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    client.dispose();
+  });
+
+  it("poll timer fires pollAircraft which returns early after zoom drops", async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ states: [] })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    let currentZoom = 8;
+    const mapStub = {
+      getZoom: () => currentZoom,
+      getBounds: () => ({
+        getWest: () => -3.6,
+        getSouth: () => 55.8,
+        getEast: () => -3.0,
+        getNorth: () => 56.1
+      })
+    };
+
+    const client = new TrafficClient(mapStub as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Now drop zoom below minimum
+    currentZoom = 2;
+
+    // Advance past poll timer - pollAircraft should bail because zoom is low
+    vi.advanceTimersByTime(15000);
+    await flushAsyncWork();
+
+    // Should not have made a second opensky fetch
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    client.dispose();
+  });
+
+  it("refreshAircraftIdentity bails when aircraft cleared before identity loads", async () => {
+    let resolveIdentity: (() => void) | null = null;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (typeof url === "string" && url.includes("opensky")) {
+        return {
+          ok: true,
+          json: async () => ({
+            states: [
+              ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+            ]
+          })
+        };
+      }
+      // Identity shard - delay resolution so we can clear aircraft first
+      if (typeof url === "string" && url.includes("aircraft-identity")) {
+        return {
+          ok: true,
+          json: () =>
+            new Promise<unknown>((resolve) => {
+              resolveIdentity = () => resolve({ abc123: ["G-TEST", "B738", "Boeing", "737-800"] });
+            })
+        };
+      }
+      return { ok: false, status: 404 };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshots: Array<{ aircraft: unknown[] }> = [];
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: (s) => snapshots.push({ aircraft: s.aircraft }),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    // Let the opensky fetch resolve
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    // Identity shard fetch is in flight. Now disable aircraft to clear latestAircraft
+    client.setLayers(false, false);
+
+    // Resolve the identity shard
+    if (resolveIdentity) {
+      resolveIdentity();
+    }
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    // latestAircraft was cleared, so refreshAircraftIdentity should have bailed
+    expect(snapshots.at(-1)?.aircraft).toEqual([]);
+
+    client.dispose();
+  });
+
+  it("identity merge triggers additional snapshot when identity changes tracks", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (typeof url === "string" && url.includes("opensky")) {
+        return {
+          ok: true,
+          json: async () => ({
+            states: [
+              ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+            ]
+          })
+        };
+      }
+      // Identity shard - tuple format: [registration, typeCode, manufacturer, model]
+      if (typeof url === "string" && url.includes("aircraft-identity")) {
+        return {
+          ok: true,
+          json: async () => ({
+            abc123: ["G-ABCD", "B738", "Boeing", "737-800"]
+          })
+        };
+      }
+      return { ok: false, status: 404 };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshots: Array<{ aircraft: Array<{ id: string; registration?: string | null }> }> = [];
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: (s) =>
+        snapshots.push({ aircraft: s.aircraft as Array<{ id: string; registration?: string | null }> }),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+
+    // Flush multiple times to allow opensky fetch, identity shard fetch, and refresh
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+
+    // The identity shard should have been fetched and merged
+    const identityFetches = fetchMock.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("aircraft-identity")
+    );
+    expect(identityFetches.length).toBeGreaterThanOrEqual(1);
+
+    // The identity merge should have produced a snapshot with the registration
+    const lastAircraft = snapshots.at(-1)?.aircraft;
+    expect(lastAircraft).toHaveLength(1);
+    expect(lastAircraft![0].registration).toBe("G-ABCD");
 
     client.dispose();
   });
