@@ -7,6 +7,7 @@ export type MapState = {
   nightEnabled: boolean;
   weatherEnabled: boolean;
   earthquakeEnabled: boolean;
+  issEnabled: boolean;
   measureEnabled: boolean;
   autoSpinEnabled: boolean;
   userInteracting: boolean;

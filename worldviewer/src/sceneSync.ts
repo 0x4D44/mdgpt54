@@ -16,6 +16,7 @@ import {
 import type { MapState } from "./mapState";
 import type { WeatherRadarPresentation } from "./overlays/weatherRadar";
 import type { EarthquakePresentation } from "./overlays/earthquakeOverlay";
+import type { IssPresentation } from "./overlays/issTracker";
 import { syncMetrics, type MetricElements } from "./metricUI";
 
 export type OverlayLike = {
@@ -30,10 +31,12 @@ export type SceneSyncDeps = {
   solarTerminator: OverlayLike;
   weatherRadar: OverlayLike;
   earthquakeOverlay: OverlayLike;
+  issTracker: OverlayLike;
   measureTool: OverlayLike;
   dismissPopup: () => void;
   getWeatherRadarPresentation: () => WeatherRadarPresentation;
   getEarthquakePresentation: () => EarthquakePresentation;
+  getIssPresentation: () => IssPresentation;
   getMeasureNote: () => string | null;
   sceneOverlayNote: HTMLElement;
   sceneOverlayCredit: HTMLElement;
@@ -166,7 +169,7 @@ export function spinGlobe(map: Map, mapState: MapState): void {
 }
 
 export function syncSceneOverlays(map: Map, deps: SceneSyncDeps): void {
-  const { mapState, solarTerminator, weatherRadar, earthquakeOverlay, measureTool } = deps;
+  const { mapState, solarTerminator, weatherRadar, earthquakeOverlay, issTracker, measureTool } = deps;
 
   if (shouldShowNightOverlay(mapState.nightEnabled, mapState.projectionMode)) {
     solarTerminator.enable(map);
@@ -186,6 +189,12 @@ export function syncSceneOverlays(map: Map, deps: SceneSyncDeps): void {
     earthquakeOverlay.disable(map);
   }
 
+  if (mapState.issEnabled) {
+    issTracker.enable(map);
+  } else {
+    issTracker.disable(map);
+  }
+
   if (mapState.measureEnabled) {
     measureTool.enable(map);
   } else {
@@ -198,10 +207,11 @@ export function syncSceneOverlays(map: Map, deps: SceneSyncDeps): void {
 export function renderSceneOverlayPresentation(deps: SceneSyncDeps): void {
   const {
     mapState, sceneOverlayNote, sceneOverlayCredit,
-    getWeatherRadarPresentation, getEarthquakePresentation, getMeasureNote
+    getWeatherRadarPresentation, getEarthquakePresentation, getIssPresentation, getMeasureNote
   } = deps;
   const weatherRadarPresentation = getWeatherRadarPresentation();
   const earthquakePresentation = getEarthquakePresentation();
+  const issPresentation = getIssPresentation();
   const measureNote = getMeasureNote();
   const notes: string[] = [];
   const credits: string[] = [];
@@ -214,6 +224,9 @@ export function renderSceneOverlayPresentation(deps: SceneSyncDeps): void {
   }
   if (earthquakePresentation.note) {
     notes.push(earthquakePresentation.note);
+  }
+  if (issPresentation.note) {
+    notes.push(issPresentation.note);
   }
   if (measureNote) {
     notes.push(measureNote);

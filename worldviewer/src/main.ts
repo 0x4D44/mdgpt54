@@ -13,6 +13,12 @@ import { MAX_BROWSER_ZOOM } from "./detailProfile";
 import { getTerrainExaggeration, normalizeTerrainElevation } from "./reliefProfile";
 import { createSolarTerminatorOverlay } from "./overlays/solarTerminator";
 import {
+  createTimeScrubber,
+  dateFromSliderValue,
+  sliderValueFromDate,
+  formatScrubberLabel
+} from "./overlays/timeScrubber";
+import {
   createWeatherRadarOverlay,
   type WeatherRadarPresentation
 } from "./overlays/weatherRadar";
@@ -20,6 +26,10 @@ import {
   createEarthquakeOverlay,
   type EarthquakePresentation
 } from "./overlays/earthquakeOverlay";
+import {
+  createIssTrackerOverlay,
+  type IssPresentation
+} from "./overlays/issTracker";
 import { createMeasureTool, type MeasureState, type MeasureResult } from "./overlays/measureTool";
 import { formatDistance, formatBearing } from "./overlays/measureGeodesic";
 import { TrafficClient } from "./traffic/trafficClient";
@@ -223,9 +233,15 @@ app.innerHTML = `
           <button type="button" class="toggle-chip is-active" data-toggle="night" aria-pressed="true">Night</button>
           <button type="button" class="toggle-chip" data-toggle="weather" aria-pressed="false">Weather</button>
           <button type="button" class="toggle-chip" data-toggle="earthquakes" aria-pressed="false">Quakes</button>
+          <button type="button" class="toggle-chip" data-toggle="iss" aria-pressed="false">ISS</button>
           <button type="button" class="toggle-chip is-active" data-toggle="buildings" aria-pressed="true">3D Buildings</button>
           <button type="button" class="toggle-chip is-active" data-toggle="spin" aria-pressed="true">Orbit Spin</button>
           <button type="button" class="toggle-chip" data-toggle="measure" aria-pressed="false">Measure</button>
+        </div>
+        <div id="time-scrubber" class="time-scrubber" hidden>
+          <label class="time-scrubber-label" for="time-slider" id="time-scrubber-label">--:-- UTC</label>
+          <input id="time-slider" type="range" min="0" max="1440" step="1" value="720" />
+          <button id="time-scrubber-reset" type="button" class="time-scrubber-reset">Reset to live</button>
         </div>
         <p id="scene-overlay-note" class="scene-overlay-note" hidden></p>
         <p id="scene-overlay-credit" class="scene-overlay-credit" hidden></p>
@@ -296,6 +312,10 @@ const controlDock = document.querySelector<HTMLElement>("#control-dock")!;
 const dockToggle = document.querySelector<HTMLButtonElement>("#dock-toggle")!;
 const sceneOverlayNote = document.querySelector<HTMLElement>("#scene-overlay-note")!;
 const sceneOverlayCredit = document.querySelector<HTMLElement>("#scene-overlay-credit")!;
+const timeScrubberContainer = document.querySelector<HTMLDivElement>("#time-scrubber")!;
+const timeSlider = document.querySelector<HTMLInputElement>("#time-slider")!;
+const timeScrubberLabel = document.querySelector<HTMLElement>("#time-scrubber-label")!;
+const timeScrubberResetBtn = document.querySelector<HTMLButtonElement>("#time-scrubber-reset")!;
 const presetGrid = document.querySelector<HTMLDivElement>(".preset-grid")!;
 const saveViewBtn = document.querySelector<HTMLButtonElement>("#save-view-btn")!;
 const presetButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-preset]"));
@@ -309,6 +329,17 @@ const metricElements: MetricElements = {
 };
 const searchRequests = createSearchRequestController();
 const solarTerminator = createSolarTerminatorOverlay();
+const timeScrubber = createTimeScrubber({
+  onDateChange: (date) => {
+    if (date) {
+      solarTerminator.setGetNow(() => date);
+      timeScrubberLabel.textContent = formatScrubberLabel(date);
+    } else {
+      solarTerminator.setGetNow(() => new Date());
+      timeScrubberLabel.textContent = formatScrubberLabel(new Date());
+    }
+  }
+});
 let weatherRadarPresentation: WeatherRadarPresentation = {
   note: null,
   creditLabel: null
@@ -331,6 +362,14 @@ const earthquakeOverlay = createEarthquakeOverlay({
   }
 });
 
+let issPresentation: IssPresentation = { note: null };
+const issTracker = createIssTrackerOverlay({
+  onStateChange: (presentation) => {
+    issPresentation = presentation;
+    renderSceneOverlayPresentation(sceneSyncDeps);
+  }
+});
+
 let measureNote: string | null = null;
 const measureTool = createMeasureTool({
   onStateChange: (_state: MeasureState, result: MeasureResult | null) => {
@@ -348,6 +387,7 @@ const mapState: MapState = {
   nightEnabled: true,
   weatherEnabled: false,
   earthquakeEnabled: false,
+  issEnabled: false,
   measureEnabled: false,
   autoSpinEnabled: true,
   userInteracting: false,
@@ -371,10 +411,12 @@ const sceneSyncDeps: SceneSyncDeps = {
   solarTerminator,
   weatherRadar,
   earthquakeOverlay,
+  issTracker,
   measureTool,
   dismissPopup,
   getWeatherRadarPresentation: () => weatherRadarPresentation,
   getEarthquakePresentation: () => earthquakePresentation,
+  getIssPresentation: () => issPresentation,
   getMeasureNote: () => measureNote,
   sceneOverlayNote,
   sceneOverlayCredit
@@ -443,6 +485,7 @@ async function bootstrap(): Promise<void> {
     wirePresets();
     wireBookmarks();
     wireToggles();
+    wireTimeScrubber();
     syncSceneOverlays(map, sceneSyncDeps);
     wireTraffic(map);
 
@@ -820,6 +863,7 @@ function wireToggles(): void {
           mapState.nightEnabled = !mapState.nightEnabled;
           button.classList.toggle("is-active", mapState.nightEnabled);
           syncSceneOverlays(mapInstance, sceneSyncDeps);
+          syncTimeScrubberVisibility();
           statusPill.textContent = mapState.nightEnabled ? "Night overlay enabled." : "Night overlay hidden.";
           break;
         case "weather":
@@ -833,6 +877,12 @@ function wireToggles(): void {
           button.classList.toggle("is-active", mapState.earthquakeEnabled);
           syncSceneOverlays(mapInstance, sceneSyncDeps);
           statusPill.textContent = mapState.earthquakeEnabled ? "Earthquake layer enabled." : "Earthquake layer hidden.";
+          break;
+        case "iss":
+          mapState.issEnabled = !mapState.issEnabled;
+          button.classList.toggle("is-active", mapState.issEnabled);
+          syncSceneOverlays(mapInstance, sceneSyncDeps);
+          statusPill.textContent = mapState.issEnabled ? "ISS tracker enabled." : "ISS tracker hidden.";
           break;
         case "measure":
           mapState.measureEnabled = !mapState.measureEnabled;
@@ -858,6 +908,39 @@ function wireToggles(): void {
       updateHash();
     });
   });
+}
+
+function syncTimeScrubberVisibility(): void {
+  timeScrubberContainer.hidden = !mapState.nightEnabled;
+  if (!mapState.nightEnabled) {
+    timeScrubber.resetToLive();
+    timeSlider.value = String(sliderValueFromDate(new Date()));
+  }
+}
+
+function wireTimeScrubber(): void {
+  // Initialize slider to current time
+  const now = new Date();
+  timeSlider.value = String(sliderValueFromDate(now));
+  timeScrubberLabel.textContent = formatScrubberLabel(now);
+
+  // Update on slider input (fires continuously while dragging)
+  timeSlider.addEventListener("input", () => {
+    const value = Number(timeSlider.value);
+    const date = dateFromSliderValue(value);
+    timeScrubber.setOverride(date);
+  });
+
+  // Reset to live button
+  timeScrubberResetBtn.addEventListener("click", () => {
+    timeScrubber.resetToLive();
+    const nowDate = new Date();
+    timeSlider.value = String(sliderValueFromDate(nowDate));
+    timeScrubberLabel.textContent = formatScrubberLabel(nowDate);
+  });
+
+  // Match initial visibility to night toggle state
+  syncTimeScrubberVisibility();
 }
 
 function wireTraffic(mapInstance: Map): void {
