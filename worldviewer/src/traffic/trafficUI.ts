@@ -19,8 +19,8 @@ export function createTrafficUI(controlDock: HTMLElement): TrafficUIElements {
       <span id="traffic-status" class="traffic-status">Off</span>
     </div>
     <div class="toggle-grid">
-      <button type="button" class="toggle-chip" data-traffic-toggle="aircraft">Aircraft</button>
-      <button type="button" class="toggle-chip" data-traffic-toggle="ships">Ships</button>
+      <button type="button" class="toggle-chip" data-traffic-toggle="aircraft" aria-pressed="false">Aircraft</button>
+      <button type="button" class="toggle-chip" data-traffic-toggle="ships" aria-pressed="false">Ships</button>
     </div>
     <p id="traffic-hints" class="traffic-hints" hidden></p>
     <p class="traffic-coverage">
@@ -73,6 +73,10 @@ export function updateTrafficStatus(
       els.statusText.textContent = "Live";
       els.statusText.className = "traffic-status traffic-status--live";
       break;
+    case "aircraft_error":
+      els.statusText.textContent = "Aircraft feed error";
+      els.statusText.className = "traffic-status traffic-status--disconnected";
+      break;
     case "disconnected":
       els.statusText.textContent = "Reconnecting...";
       els.statusText.className = "traffic-status traffic-status--disconnected";
@@ -84,18 +88,21 @@ export function updateTrafficStatus(
   }
 }
 
-/** Update ship toggle availability based on snapshot status. */
+/** Update layer toggle presentation based on snapshot status. */
 export function updateLayerAvailability(els: TrafficUIElements, status: SnapshotStatus): void {
   applyToggleStatus(els.shipsToggle, status.ships.code, status.ships.message);
   applyToggleStatus(els.aircraftToggle, status.aircraft.code, status.aircraft.message);
 }
 
 function applyToggleStatus(button: HTMLButtonElement, code: TrafficLayerStatusCode, message: string | null): void {
-  button.classList.remove("is-unavailable", "is-zoom-hint");
+  button.classList.remove("is-error", "is-unavailable", "is-zoom-hint");
 
-  if (code === "unavailable") {
-    button.disabled = true;
-    button.classList.remove("is-active");
+  if (code === "error") {
+    button.disabled = false;
+    button.classList.add("is-error");
+    button.title = message ?? "Feed error";
+  } else if (code === "unavailable") {
+    button.disabled = false;
     button.classList.add("is-unavailable");
     button.title = message ?? "Unavailable";
   } else if (code === "zoom_in") {
@@ -119,11 +126,17 @@ export function buildLayerStatusHints(
   if (!localHint && aircraftEnabled && status.aircraft.code === "zoom_in") {
     hints.push(status.aircraft.message ?? "Zoom in for aircraft");
   }
+  if (aircraftEnabled && status.aircraft.code === "error") {
+    hints.push(status.aircraft.message ?? "Aircraft feed error");
+  }
   if (aircraftEnabled && status.aircraft.code === "unavailable") {
     hints.push(status.aircraft.message ?? "Aircraft unavailable");
   }
   if (!localHint && shipsEnabled && status.ships.code === "zoom_in") {
     hints.push(status.ships.message ?? "Zoom in for ships");
+  }
+  if (shipsEnabled && status.ships.code === "error") {
+    hints.push(status.ships.message ?? "Ship feed error");
   }
   if (shipsEnabled && status.ships.code === "unavailable") {
     hints.push(status.ships.message ?? "Ships unavailable");

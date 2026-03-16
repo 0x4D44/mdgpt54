@@ -58,6 +58,7 @@ import {
   type CameraHashState
 } from "./cameraHash";
 import { debounce } from "./traffic/trafficHelpers";
+import { createKeydownHandler } from "./keyboardNav";
 
 type Preset = {
   id: string;
@@ -207,12 +208,12 @@ app.innerHTML = `
           <span>Runtime controls</span>
         </div>
         <div class="toggle-grid">
-          <button type="button" class="toggle-chip is-active" data-toggle="terrain">Terrain</button>
-          <button type="button" class="toggle-chip is-active" data-toggle="relief">Relief</button>
-          <button type="button" class="toggle-chip is-active" data-toggle="night">Night</button>
-          <button type="button" class="toggle-chip" data-toggle="weather">Weather</button>
-          <button type="button" class="toggle-chip is-active" data-toggle="buildings">3D Buildings</button>
-          <button type="button" class="toggle-chip is-active" data-toggle="spin">Orbit Spin</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="terrain" aria-pressed="true">Terrain</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="relief" aria-pressed="true">Relief</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="night" aria-pressed="true">Night</button>
+          <button type="button" class="toggle-chip" data-toggle="weather" aria-pressed="false">Weather</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="buildings" aria-pressed="true">3D Buildings</button>
+          <button type="button" class="toggle-chip is-active" data-toggle="spin" aria-pressed="true">Orbit Spin</button>
         </div>
         <p id="scene-overlay-note" class="scene-overlay-note" hidden></p>
         <p id="scene-overlay-credit" class="scene-overlay-credit" hidden></p>
@@ -400,6 +401,28 @@ async function bootstrap(): Promise<void> {
     wireToggles();
     syncSceneOverlays(map, sceneSyncDeps);
     wireTraffic(map);
+
+    document.addEventListener("keydown", createKeydownHandler({
+      isInputFocused: () => document.activeElement === searchInput,
+      toggleByName: (name) => {
+        const btn = toggleButtons.find((b) => b.dataset.toggle === name)
+          ?? document.querySelector<HTMLButtonElement>(`[data-toggle="${name}"]`)
+          ?? document.querySelector<HTMLButtonElement>(`[data-traffic-toggle="${name}"]`);
+        btn?.click();
+      },
+      activatePreset: (index) => {
+        presetButtons[index]?.click();
+      },
+      closePopup: () => {
+        if (document.activeElement === searchInput) {
+          searchInput.blur();
+        }
+        dismissPopup();
+      },
+      focusSearch: () => {
+        searchInput.focus();
+      }
+    }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load the globe.";
     statusPill.textContent = message;
@@ -447,6 +470,7 @@ function applyHashToggles(hashState: CameraHashState): void {
     apply(value);
     const chip = toggleButtons.find((btn) => btn.dataset.toggle === chipName);
     chip?.classList.toggle("is-active", value);
+    chip?.setAttribute("aria-pressed", String(value));
   }
 
   // Recalculate terrain exaggeration for the hash zoom if provided
@@ -662,6 +686,7 @@ function wireToggles(): void {
           break;
       }
 
+      button.setAttribute("aria-pressed", String(button.classList.contains("is-active")));
       updateHash();
     });
   });
@@ -739,6 +764,7 @@ function wireTraffic(mapInstance: Map): void {
       if (ui.aircraftToggle.disabled) return;
       client.state.aircraftEnabled = !client.state.aircraftEnabled;
       ui.aircraftToggle.classList.toggle("is-active", client.state.aircraftEnabled);
+      ui.aircraftToggle.setAttribute("aria-pressed", String(client.state.aircraftEnabled));
       if (!client.state.aircraftEnabled) {
         aircraft3d?.setTracks([]);
         clearAircraftData(mapInstance);
@@ -747,6 +773,7 @@ function wireTraffic(mapInstance: Map): void {
       if (ui.shipsToggle.disabled) return;
       client.state.shipsEnabled = !client.state.shipsEnabled;
       ui.shipsToggle.classList.toggle("is-active", client.state.shipsEnabled);
+      ui.shipsToggle.setAttribute("aria-pressed", String(client.state.shipsEnabled));
       if (!client.state.shipsEnabled) clearShipsData(mapInstance);
     }
 
