@@ -275,6 +275,41 @@ export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number
   return debounced as unknown as T;
 }
 
+/** Altitude band color stops used by both the 2D MapLibre expression and the 3D material tint. */
+export const ALTITUDE_COLOR_STOPS: ReadonlyArray<{ altitude: number; color: string }> = [
+  { altitude: 0, color: "#4ade80" },
+  { altitude: 1500, color: "#4ade80" },
+  { altitude: 1500, color: "#facc15" },
+  { altitude: 6000, color: "#facc15" },
+  { altitude: 6000, color: "#67d0ff" },
+  { altitude: 10000, color: "#67d0ff" },
+  { altitude: 10000, color: "#3b82f6" },
+  { altitude: 13000, color: "#3b82f6" },
+  { altitude: 13000, color: "#a78bfa" }
+];
+
+/**
+ * Returns a MapLibre interpolate expression that colors aircraft icons by altitude band.
+ * Uses coalesce to prefer geoAltitudeMeters over altitudeMeters, falling back to 0.
+ */
+export function altitudeColorExpression(): unknown[] {
+  return [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["get", "geoAltitudeMeters"], ["get", "altitudeMeters"], 0],
+    ...ALTITUDE_COLOR_STOPS.flatMap((stop) => [stop.altitude, stop.color])
+  ];
+}
+
+/** Returns the hex color for a given altitude in meters, using the same bands as the 2D expression. */
+export function altitudeColor(altitudeMeters: number): string {
+  if (altitudeMeters <= 1500) return "#4ade80";
+  if (altitudeMeters <= 6000) return "#facc15";
+  if (altitudeMeters <= 10000) return "#67d0ff";
+  if (altitudeMeters <= 13000) return "#3b82f6";
+  return "#a78bfa";
+}
+
 function hasText(value: string | null | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }

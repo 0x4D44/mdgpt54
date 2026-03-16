@@ -2,11 +2,12 @@ import { MercatorCoordinate, type CustomLayerInterface, type Map as MapLibreMap 
 
 import {
   buildRenderableAircraft3dTracks,
+  filterAircraft3dHandoffTracks,
   resolveAircraft3dModeFromVisibleCount,
   type Aircraft3dClassKey,
   type RenderableAircraft3dTrack
 } from "./aircraft3d";
-import { bboxFromBounds } from "./trafficHelpers";
+import { altitudeColor, bboxFromBounds } from "./trafficHelpers";
 import type { LiveTrack } from "./trafficTypes";
 
 type ThreeModule = typeof import("three");
@@ -92,24 +93,26 @@ export class Aircraft3dController {
       return;
     }
 
+    const zoom = this.map.getZoom();
     const renderableTracks = buildRenderableAircraft3dTracks(this.latestTracks, bboxFromBounds(this.map.getBounds()));
+    const handoffTracks = filterAircraft3dHandoffTracks(renderableTracks, zoom);
     const mode = resolveAircraft3dModeFromVisibleCount(this.enabled, {
-      zoom: this.map.getZoom(),
+      zoom,
       pitch: this.map.getPitch(),
       visibleRenderableCount: renderableTracks.length
     });
     this.enabled = mode.enabled;
 
-    if (this.enabled && renderableTracks.length > 0) {
+    if (this.enabled && handoffTracks.length > 0) {
       void this.ensureLayer();
     }
 
     if (this.layer) {
-      this.layer.setTracks(this.enabled ? renderableTracks : []);
+      this.layer.setTracks(this.enabled ? handoffTracks : []);
     }
 
     this.updateHiddenTrackIds(
-      this.enabled && this.layer ? new Set(renderableTracks.map((track) => track.id)) : EMPTY_HIDDEN_IDS
+      this.enabled && this.layer ? new Set(handoffTracks.map((track) => track.id)) : EMPTY_HIDDEN_IDS
     );
   }
 
@@ -207,6 +210,7 @@ class Aircraft3dRuntimeLayer implements CustomLayerInterface {
 
       object.visible = true;
       applyAircraftModelMatrix(this.THREE, object.matrix, track);
+      applyAltitudeTint(this.THREE, object, track.altitudeMeters);
       object.matrixWorldNeedsUpdate = true;
     }
 
@@ -499,6 +503,34 @@ function applyAircraftModelMatrix(
     .multiply(scratch.scale.makeScale(mercatorScale, -mercatorScale, mercatorScale));
 }
 
+const ALTITUDE_TINT_USER_DATA = "altitudeTintColor";
+const MATERIALS_CLONED_USER_DATA = "materialsCloned";
+
+function applyAltitudeTint(THREE: ThreeModule, object: import("three").Group, altitudeMeters: number): void {
+  const tint = altitudeColor(altitudeMeters);
+  if (object.userData[ALTITUDE_TINT_USER_DATA] === tint) {
+    return;
+  }
+
+  object.userData[ALTITUDE_TINT_USER_DATA] = tint;
+  const color = new THREE.Color(tint);
+  const needsClone = !object.userData[MATERIALS_CLONED_USER_DATA];
+
+  object.traverse((child: import("three").Object3D) => {
+    const mesh = child as import("three").Mesh;
+    if (mesh.isMesh && mesh.material instanceof THREE.MeshStandardMaterial) {
+      const mat = needsClone
+        ? (mesh.material = mesh.material.clone()) as import("three").MeshStandardMaterial
+        : mesh.material;
+      mat.color.copy(color);
+    }
+  });
+
+  if (needsClone) {
+    object.userData[MATERIALS_CLONED_USER_DATA] = true;
+  }
+}
+
 function darkenColor(hexColor: string, factor: number): string {
   const color = Number.parseInt(hexColor.replace("#", ""), 16);
   const red = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
@@ -546,6 +578,7 @@ function sameTrackIdSet(left: ReadonlySet<string>, right: ReadonlySet<string>): 
 
 export const aircraft3dLayerTestUtils = {
   applyAircraftModelMatrix,
+  applyAltitudeTint,
   createAircraftMeshPrototypes,
   syncAircraftObjects
 };

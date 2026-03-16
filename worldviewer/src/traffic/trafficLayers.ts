@@ -2,6 +2,12 @@ import { type Map, Popup } from "maplibre-gl";
 
 import { escapeHtml } from "../escapeHtml";
 import {
+  AIRCRAFT_ICON_PIXEL_RATIO,
+  AIRCRAFT_ICON_SIZE,
+  aircraftIconSizeExpression
+} from "./aircraftIconSizing";
+import {
+  altitudeColorExpression,
   buildAircraftPopupIdentity,
   formatAge,
   formatAircraftAltitude,
@@ -9,7 +15,7 @@ import {
   tracksToGeoJSON,
   type AircraftVisualCategory
 } from "./trafficHelpers";
-import type { LiveTrack, SnapshotMessage } from "./trafficTypes";
+import type { LiveTrack, LiveTrackKind, SnapshotMessage } from "./trafficTypes";
 
 export const AIRCRAFT_SOURCE = "live-aircraft";
 export const SHIPS_SOURCE = "live-ships";
@@ -23,7 +29,6 @@ const SHIPS_CLUSTER_COUNT = "live-ships-cluster-count";
 
 const CLUSTER_RADIUS = 40;
 const CLUSTER_MAX_ZOOM = 10;
-const AIRCRAFT_ICON_SIZE = 48;
 const AIRCRAFT_ICON_NAMES: Record<AircraftVisualCategory, string> = {
   generic: "aircraft-generic",
   light: "aircraft-light",
@@ -44,6 +49,7 @@ type AircraftIconImage =
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 let trafficPopup: Popup | null = null;
+let trafficPopupOwner: LiveTrackKind | null = null;
 
 /** Add GeoJSON sources and layers for live traffic to the map. */
 export function addTrafficLayers(map: Map): void {
@@ -99,7 +105,7 @@ export function addTrafficLayers(map: Map): void {
     filter: ["!", ["has", "point_count"]],
     layout: {
       "icon-image": aircraftIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.42, 8, 0.48, 12, 0.58],
+      "icon-size": aircraftIconSizeExpression(),
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
       "icon-rotate": ["coalesce", ["get", "heading"], 0],
@@ -108,6 +114,7 @@ export function addTrafficLayers(map: Map): void {
       "icon-keep-upright": false
     },
     paint: {
+      "icon-color": altitudeColorExpression() as any,
       "icon-opacity": ["coalesce", ["get", "opacity"], 1]
     }
   });
@@ -177,12 +184,18 @@ export function updateTrafficData(
       tracksToGeoJSON(snapshot.aircraft, now, hiddenAircraftIds)
     );
   }
+  if (snapshot.aircraft.length === 0) {
+    clearTrafficPopup("aircraft");
+  }
 
   const shipsSource = map.getSource(SHIPS_SOURCE);
   if (shipsSource && "setData" in shipsSource) {
     (shipsSource as { setData(data: GeoJSON.FeatureCollection): void }).setData(
       tracksToGeoJSON(snapshot.ships, now)
     );
+  }
+  if (snapshot.ships.length === 0) {
+    clearTrafficPopup("ship");
   }
 }
 
@@ -192,6 +205,8 @@ export function clearAircraftData(map: Map): void {
   if (source && "setData" in source) {
     (source as { setData(data: GeoJSON.FeatureCollection): void }).setData(EMPTY_FC);
   }
+
+  clearTrafficPopup("aircraft");
 }
 
 /** Clear only the ships source. */
@@ -200,14 +215,15 @@ export function clearShipsData(map: Map): void {
   if (source && "setData" in source) {
     (source as { setData(data: GeoJSON.FeatureCollection): void }).setData(EMPTY_FC);
   }
+
+  clearTrafficPopup("ship");
 }
 
 /** Clear both traffic sources to empty. */
 export function clearTrafficData(map: Map): void {
   clearAircraftData(map);
   clearShipsData(map);
-  trafficPopup?.remove();
-  trafficPopup = null;
+  clearTrafficPopup();
 }
 
 function wireTrafficPopups(map: Map): void {
@@ -242,7 +258,7 @@ function wireTrafficPopups(map: Map): void {
 }
 
 function showTrafficPopup(map: Map, coords: [number, number], props: Record<string, unknown>): void {
-  trafficPopup?.remove();
+  clearTrafficPopup();
 
   const kind = props.kind === "ship" ? "ship" : "aircraft";
   const updatedAt = typeof props.updatedAt === "number" ? props.updatedAt : 0;
@@ -253,6 +269,17 @@ function showTrafficPopup(map: Map, coords: [number, number], props: Record<stri
     .setLngLat(coords)
     .setHTML(html)
     .addTo(map);
+  trafficPopupOwner = kind;
+}
+
+function clearTrafficPopup(owner?: LiveTrackKind): void {
+  if (owner && trafficPopupOwner !== owner) {
+    return;
+  }
+
+  trafficPopup?.remove();
+  trafficPopup = null;
+  trafficPopupOwner = null;
 }
 
 function buildAircraftPopupHtml(props: Record<string, unknown>, age: string): string {
@@ -306,7 +333,7 @@ function ensureAircraftIcons(map: Map): void {
       continue;
     }
 
-    map.addImage(imageName, createAircraftIcon(category), { pixelRatio: 2 });
+    map.addImage(imageName, createAircraftIcon(category), { pixelRatio: AIRCRAFT_ICON_PIXEL_RATIO });
   }
 }
 
@@ -326,7 +353,7 @@ function createAircraftIcon(category: AircraftVisualCategory): AircraftIconImage
 
   context.clearRect(0, 0, AIRCRAFT_ICON_SIZE, AIRCRAFT_ICON_SIZE);
   context.translate(AIRCRAFT_ICON_SIZE / 2, AIRCRAFT_ICON_SIZE / 2);
-  context.fillStyle = "rgba(103, 208, 255, 0.96)";
+  context.fillStyle = "#ffffff";
   context.strokeStyle = "rgba(5, 11, 20, 0.92)";
   context.lineWidth = 2.4;
   context.lineJoin = "round";

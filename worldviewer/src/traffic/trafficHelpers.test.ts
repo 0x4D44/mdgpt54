@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  ALTITUDE_COLOR_STOPS,
   MIN_LIVE_TRAFFIC_ZOOM,
   STALE_THRESHOLD_MS,
+  altitudeColor,
+  altitudeColorExpression,
   bboxFromBounds,
   buildAircraftPopupIdentity,
   debounce,
@@ -462,5 +465,59 @@ describe("debounce", () => {
     vi.advanceTimersByTime(100);
     expect(fn).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+});
+
+describe("altitudeColorExpression", () => {
+  it("returns a valid MapLibre interpolate expression array", () => {
+    const expr = altitudeColorExpression();
+    expect(Array.isArray(expr)).toBe(true);
+    expect(expr[0]).toBe("interpolate");
+    expect(expr[1]).toEqual(["linear"]);
+  });
+
+  it("uses coalesce of geoAltitudeMeters and altitudeMeters as the input", () => {
+    const expr = altitudeColorExpression();
+    const input = expr[2];
+    expect(Array.isArray(input)).toBe(true);
+    expect((input as unknown[])[0]).toBe("coalesce");
+    expect((input as unknown[])[1]).toEqual(["get", "geoAltitudeMeters"]);
+    expect((input as unknown[])[2]).toEqual(["get", "altitudeMeters"]);
+    expect((input as unknown[])[3]).toBe(0);
+  });
+
+  it("has the correct number of color stops from ALTITUDE_COLOR_STOPS", () => {
+    const expr = altitudeColorExpression();
+    // First 3 elements: "interpolate", ["linear"], coalesce input
+    // Remaining elements are altitude/color pairs from ALTITUDE_COLOR_STOPS
+    const stops = expr.slice(3);
+    expect(stops.length).toBe(ALTITUDE_COLOR_STOPS.length * 2);
+  });
+});
+
+describe("altitudeColor", () => {
+  it("returns green for ground-level aircraft", () => {
+    expect(altitudeColor(0)).toBe("#4ade80");
+    expect(altitudeColor(1500)).toBe("#4ade80");
+  });
+
+  it("returns yellow for low cruise", () => {
+    expect(altitudeColor(1501)).toBe("#facc15");
+    expect(altitudeColor(6000)).toBe("#facc15");
+  });
+
+  it("returns cyan for mid cruise", () => {
+    expect(altitudeColor(6001)).toBe("#67d0ff");
+    expect(altitudeColor(10000)).toBe("#67d0ff");
+  });
+
+  it("returns blue for high cruise", () => {
+    expect(altitudeColor(10001)).toBe("#3b82f6");
+    expect(altitudeColor(13000)).toBe("#3b82f6");
+  });
+
+  it("returns purple above FL400", () => {
+    expect(altitudeColor(13001)).toBe("#a78bfa");
+    expect(altitudeColor(15000)).toBe("#a78bfa");
   });
 });
