@@ -95,7 +95,7 @@ export function buildNightFeature(date: Date): GeoJSON.Feature<GeoJSON.MultiPoly
 }
 
 export function createSolarTerminatorOverlay(options: SolarTerminatorOptions = {}) {
-  const getNow = options.getNow ?? (() => new Date());
+  let getNow = options.getNow ?? (() => new Date());
   const updateIntervalMs = options.updateIntervalMs ?? SOLAR_UPDATE_INTERVAL_MS;
   let currentMap: Map | null = null;
   let loadHandler: (() => void) | null = null;
@@ -199,9 +199,17 @@ export function createSolarTerminatorOverlay(options: SolarTerminatorOptions = {
     }
   };
 
+  const setGetNow = (fn: () => Date) => {
+    getNow = fn;
+    if (currentMap) {
+      syncOverlay(currentMap);
+    }
+  };
+
   return {
     enable,
-    disable
+    disable,
+    setGetNow
   };
 }
 
