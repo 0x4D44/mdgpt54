@@ -28,7 +28,9 @@ import type { LiveTrack, LiveTrackKind, SnapshotMessage } from "./trafficTypes";
 
 export const AIRCRAFT_SOURCE = "live-aircraft";
 export const SHIPS_SOURCE = "live-ships";
+export const AIRCRAFT_TRAILS_SOURCE = "aircraft-trails";
 
+const AIRCRAFT_TRAIL_LAYER = "aircraft-trail-lines";
 const AIRCRAFT_LAYER = "live-aircraft-points";
 const AIRCRAFT_CLUSTER_LAYER = "live-aircraft-clusters";
 const AIRCRAFT_CLUSTER_COUNT = "live-aircraft-cluster-count";
@@ -79,8 +81,29 @@ export function addTrafficLayers(map: Map): void {
     clusterMaxZoom: CLUSTER_MAX_ZOOM
   });
 
+  map.addSource(AIRCRAFT_TRAILS_SOURCE, {
+    type: "geojson",
+    data: EMPTY_FC
+  });
+
   ensureAircraftIcons(map);
   ensureShipIcons(map);
+
+  // Trail layer renders BELOW aircraft icons
+  map.addLayer({
+    id: AIRCRAFT_TRAIL_LAYER,
+    type: "line",
+    source: AIRCRAFT_TRAILS_SOURCE,
+    layout: {
+      "line-cap": "round",
+      "line-join": "round"
+    },
+    paint: {
+      "line-color": "#67d0ff",
+      "line-opacity": ["coalesce", ["get", "opacity"], 0.4] as any,
+      "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.8, 12, 2.0] as any
+    }
+  });
 
   map.addLayer({
     id: AIRCRAFT_CLUSTER_LAYER,
@@ -231,6 +254,14 @@ export function updateTrafficData(
   }
 }
 
+/** Update the aircraft trails GeoJSON source. */
+export function updateTrailData(map: Map, fc: GeoJSON.FeatureCollection): void {
+  const source = map.getSource(AIRCRAFT_TRAILS_SOURCE);
+  if (source && "setData" in source) {
+    (source as { setData(data: GeoJSON.FeatureCollection): void }).setData(fc);
+  }
+}
+
 /** Clear only the aircraft source. */
 export function clearAircraftData(map: Map): void {
   const source = map.getSource(AIRCRAFT_SOURCE);
@@ -238,6 +269,7 @@ export function clearAircraftData(map: Map): void {
     (source as { setData(data: GeoJSON.FeatureCollection): void }).setData(EMPTY_FC);
   }
 
+  clearTrailData(map);
   clearTrafficPopup("aircraft");
 }
 
@@ -256,6 +288,13 @@ export function clearTrafficData(map: Map): void {
   clearAircraftData(map);
   clearShipsData(map);
   clearTrafficPopup();
+}
+
+function clearTrailData(map: Map): void {
+  const source = map.getSource(AIRCRAFT_TRAILS_SOURCE);
+  if (source && "setData" in source) {
+    (source as { setData(data: GeoJSON.FeatureCollection): void }).setData(EMPTY_FC);
+  }
 }
 
 function wireTrafficPopups(map: Map): void {

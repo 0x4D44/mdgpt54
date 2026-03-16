@@ -76,9 +76,10 @@ function createSnapshot(aircraft = [createAircraftTrack()], ships = [createShipT
 
 function makeMap() {
   const handlers = new Map<string, (event: any) => void>();
-  const sources = {
+  const sources: Record<string, { setData: ReturnType<typeof vi.fn> }> = {
     "live-aircraft": { setData: vi.fn() },
-    "live-ships": { setData: vi.fn() }
+    "live-ships": { setData: vi.fn() },
+    "aircraft-trails": { setData: vi.fn() }
   };
 
   return {
@@ -92,7 +93,7 @@ function makeMap() {
       handlers.set(`${eventName}:${layerId}`, handler);
     }),
     getCanvas: vi.fn(() => ({ style: { cursor: "" } })),
-    getSource: vi.fn((id: "live-aircraft" | "live-ships") => sources[id] ?? null)
+    getSource: vi.fn((id: string) => sources[id] ?? null)
   };
 }
 
@@ -203,17 +204,18 @@ describe("addTrafficLayers", () => {
     expect(shipPopup?.removed).toBe(true);
   });
 
-  it("adds 2 sources and 6 layers on fresh setup", async () => {
+  it("adds 3 sources and 8 layers on fresh setup", async () => {
     vi.resetModules();
     const { addTrafficLayers } = await import("./trafficLayers");
     const map = makeMap();
 
     addTrafficLayers(map as any);
 
-    expect(map.addSource).toHaveBeenCalledTimes(2);
+    expect(map.addSource).toHaveBeenCalledTimes(3);
     expect(map.addSource.mock.calls[0][0]).toBe("live-aircraft");
     expect(map.addSource.mock.calls[1][0]).toBe("live-ships");
-    expect(map.addLayer).toHaveBeenCalledTimes(7);
+    expect(map.addSource.mock.calls[2][0]).toBe("aircraft-trails");
+    expect(map.addLayer).toHaveBeenCalledTimes(8);
   });
 
   it("skips already-loaded aircraft images", async () => {

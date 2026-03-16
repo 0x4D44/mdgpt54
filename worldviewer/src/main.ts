@@ -23,8 +23,10 @@ import {
   clearAircraftData,
   clearShipsData,
   clearTrafficData,
-  updateTrafficData
+  updateTrafficData,
+  updateTrailData
 } from "./traffic/trafficLayers";
+import { createTrailStore } from "./traffic/aircraftTrails";
 import {
   createTrafficUI,
   updateLayerAvailability,
@@ -808,6 +810,7 @@ function wireToggles(): void {
 
 function wireTraffic(mapInstance: Map): void {
   const ui: TrafficUIElements = createTrafficUI(controlDock);
+  const trailStore = createTrailStore();
   let connectionStatus: TrafficConnectionStatus = "disconnected";
   let lastStatus: SnapshotStatus = {
     aircraft: { code: "ok", message: null },
@@ -857,6 +860,9 @@ function wireTraffic(mapInstance: Map): void {
       if (mapInstance.getSource("live-aircraft")) {
         ensureAircraft3d().setTracks(snapshot.aircraft);
       }
+      const now = Date.now();
+      trailStore.update(snapshot.aircraft, now);
+      updateTrailData(mapInstance, trailStore.toGeoJSON(now));
       updateTrafficData(mapInstance, snapshot, aircraft3d?.getHiddenTrackIds());
       updateLayerAvailability(ui, snapshot.status);
       updateLayerStatusHints(
@@ -881,6 +887,7 @@ function wireTraffic(mapInstance: Map): void {
       ui.aircraftToggle.setAttribute("aria-pressed", String(client.state.aircraftEnabled));
       if (!client.state.aircraftEnabled) {
         aircraft3d?.setTracks([]);
+        trailStore.clear();
         clearAircraftData(mapInstance);
       }
     } else {
