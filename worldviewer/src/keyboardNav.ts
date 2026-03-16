@@ -6,7 +6,8 @@ const TOGGLE_KEYS: Record<string, string> = {
   s: "ships",
   b: "buildings",
   r: "relief",
-  o: "spin"
+  o: "spin",
+  m: "measure"
 };
 
 const PRESET_KEYS: Record<string, number> = {

@@ -16,6 +16,8 @@ import {
   createWeatherRadarOverlay,
   type WeatherRadarPresentation
 } from "./overlays/weatherRadar";
+import { createMeasureTool, type MeasureState, type MeasureResult } from "./overlays/measureTool";
+import { formatDistance, formatBearing } from "./overlays/measureGeodesic";
 import { TrafficClient } from "./traffic/trafficClient";
 import { Aircraft3dController } from "./traffic/aircraft3dLayer";
 import {
@@ -218,6 +220,7 @@ app.innerHTML = `
           <button type="button" class="toggle-chip" data-toggle="weather" aria-pressed="false">Weather</button>
           <button type="button" class="toggle-chip is-active" data-toggle="buildings" aria-pressed="true">3D Buildings</button>
           <button type="button" class="toggle-chip is-active" data-toggle="spin" aria-pressed="true">Orbit Spin</button>
+          <button type="button" class="toggle-chip" data-toggle="measure" aria-pressed="false">Measure</button>
         </div>
         <p id="scene-overlay-note" class="scene-overlay-note" hidden></p>
         <p id="scene-overlay-credit" class="scene-overlay-credit" hidden></p>
@@ -312,12 +315,23 @@ const weatherRadar = createWeatherRadarOverlay({
   }
 });
 
+let measureNote: string | null = null;
+const measureTool = createMeasureTool({
+  onStateChange: (_state: MeasureState, result: MeasureResult | null) => {
+    measureNote = result
+      ? `${formatDistance(result.distanceMeters)} · ${formatBearing(result.bearingDegrees)}`
+      : null;
+    renderSceneOverlayPresentation(sceneSyncDeps);
+  }
+});
+
 const mapState: MapState = {
   terrainEnabled: true,
   buildingsEnabled: true,
   reliefEnabled: true,
   nightEnabled: true,
   weatherEnabled: false,
+  measureEnabled: false,
   autoSpinEnabled: true,
   userInteracting: false,
   stressModeActive: false,
@@ -339,8 +353,10 @@ const sceneSyncDeps: SceneSyncDeps = {
   metricElements,
   solarTerminator,
   weatherRadar,
+  measureTool,
   dismissPopup,
   getWeatherRadarPresentation: () => weatherRadarPresentation,
+  getMeasureNote: () => measureNote,
   sceneOverlayNote,
   sceneOverlayCredit
 };
@@ -571,6 +587,9 @@ function wireMap(mapInstance: Map): void {
   });
 
   mapInstance.on("click", (event) => {
+    // Suppress feature popups while measurement mode is active
+    if (mapState.measureEnabled) return;
+
     const feature = mapInstance
       .queryRenderedFeatures(event.point, { layers: [...FEATURE_QUERY_LAYERS] })
       .find(Boolean);
@@ -789,6 +808,14 @@ function wireToggles(): void {
           button.classList.toggle("is-active", mapState.weatherEnabled);
           syncSceneOverlays(mapInstance, sceneSyncDeps);
           statusPill.textContent = mapState.weatherEnabled ? "Weather radar enabled." : "Weather radar hidden.";
+          break;
+        case "measure":
+          mapState.measureEnabled = !mapState.measureEnabled;
+          button.classList.toggle("is-active", mapState.measureEnabled);
+          syncSceneOverlays(mapInstance, sceneSyncDeps);
+          statusPill.textContent = mapState.measureEnabled
+            ? "Measure mode: click two points to measure distance."
+            : "Measure mode off.";
           break;
         case "spin":
           mapState.autoSpinEnabled = !mapState.autoSpinEnabled;
