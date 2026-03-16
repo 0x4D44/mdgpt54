@@ -213,7 +213,7 @@ describe("addTrafficLayers", () => {
     expect(map.addSource).toHaveBeenCalledTimes(2);
     expect(map.addSource.mock.calls[0][0]).toBe("live-aircraft");
     expect(map.addSource.mock.calls[1][0]).toBe("live-ships");
-    expect(map.addLayer).toHaveBeenCalledTimes(6);
+    expect(map.addLayer).toHaveBeenCalledTimes(7);
   });
 
   it("skips already-loaded aircraft images", async () => {
@@ -265,8 +265,8 @@ describe("addTrafficLayers", () => {
 
     addTrafficLayers(map as any);
 
-    // 6 categories: generic, light, transport, fast, rotor, glider
-    expect(map.addImage).toHaveBeenCalledTimes(6);
+    // 6 aircraft categories + 2 ship icons (ship-generic, ship-wake)
+    expect(map.addImage).toHaveBeenCalledTimes(8);
     expect(mockContext.clearRect).toHaveBeenCalled();
     expect(mockContext.translate).toHaveBeenCalled();
     expect(fillCalls.length).toBeGreaterThan(0);
@@ -518,7 +518,7 @@ describe("addTrafficLayers", () => {
     vi.resetModules();
     const { updateTrafficData } = await import("./trafficLayers");
     const map = makeMap();
-    map.getSource.mockReturnValue(null);
+    map.getSource.mockReturnValue(null as any);
 
     expect(() => updateTrafficData(map as any, createSnapshot())).not.toThrow();
   });

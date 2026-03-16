@@ -7,6 +7,15 @@ import {
   aircraftIconSizeExpression
 } from "./aircraftIconSizing";
 import {
+  createShipIcon,
+  createWakeIcon,
+  SHIP_ICON_NAME,
+  SHIP_ICON_PIXEL_RATIO,
+  SHIP_WAKE_ICON_NAME,
+  shipIconSizeExpression,
+  shipWakeSizeExpression
+} from "./shipIcons";
+import {
   altitudeColorExpression,
   buildAircraftPopupIdentity,
   formatAge,
@@ -23,6 +32,7 @@ export const SHIPS_SOURCE = "live-ships";
 const AIRCRAFT_LAYER = "live-aircraft-points";
 const AIRCRAFT_CLUSTER_LAYER = "live-aircraft-clusters";
 const AIRCRAFT_CLUSTER_COUNT = "live-aircraft-cluster-count";
+const SHIPS_WAKE_LAYER = "live-ships-wake";
 const SHIPS_LAYER = "live-ships-points";
 const SHIPS_CLUSTER_LAYER = "live-ships-clusters";
 const SHIPS_CLUSTER_COUNT = "live-ships-cluster-count";
@@ -70,6 +80,7 @@ export function addTrafficLayers(map: Map): void {
   });
 
   ensureAircraftIcons(map);
+  ensureShipIcons(map);
 
   map.addLayer({
     id: AIRCRAFT_CLUSTER_LAYER,
@@ -147,23 +158,44 @@ export function addTrafficLayers(map: Map): void {
   });
 
   map.addLayer({
+    id: SHIPS_WAKE_LAYER,
+    type: "symbol",
+    source: SHIPS_SOURCE,
+    filter: ["!", ["has", "point_count"]],
+    layout: {
+      "icon-image": SHIP_WAKE_ICON_NAME,
+      "icon-size": shipWakeSizeExpression() as any,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      "icon-rotate": ["coalesce", ["get", "heading"], 0],
+      "icon-rotation-alignment": "map",
+      "icon-pitch-alignment": "map",
+      "icon-anchor": "top",
+      "icon-keep-upright": false
+    },
+    paint: {
+      "icon-opacity": ["*", ["coalesce", ["get", "opacity"], 1], 0.4] as any
+    }
+  });
+
+  map.addLayer({
     id: SHIPS_LAYER,
     type: "symbol",
     source: SHIPS_SOURCE,
     filter: ["!", ["has", "point_count"]],
     layout: {
-      "text-field": ">",
-      "text-font": ["Noto Sans Regular"],
-      "text-size": 15,
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-      "text-rotate": ["coalesce", ["get", "heading"], 0]
+      "icon-image": SHIP_ICON_NAME,
+      "icon-size": shipIconSizeExpression() as any,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      "icon-rotate": ["coalesce", ["get", "heading"], 0],
+      "icon-rotation-alignment": "map",
+      "icon-pitch-alignment": "map",
+      "icon-keep-upright": false
     },
     paint: {
-      "text-color": "#f4c989",
-      "text-halo-color": "#ffffff",
-      "text-halo-width": 0.8,
-      "text-opacity": ["coalesce", ["get", "opacity"], 1]
+      "icon-color": "#f4c989",
+      "icon-opacity": ["coalesce", ["get", "opacity"], 1]
     }
   });
 
@@ -334,6 +366,15 @@ function ensureAircraftIcons(map: Map): void {
     }
 
     map.addImage(imageName, createAircraftIcon(category), { pixelRatio: AIRCRAFT_ICON_PIXEL_RATIO });
+  }
+}
+
+function ensureShipIcons(map: Map): void {
+  if (!map.hasImage(SHIP_ICON_NAME)) {
+    map.addImage(SHIP_ICON_NAME, createShipIcon(), { pixelRatio: SHIP_ICON_PIXEL_RATIO });
+  }
+  if (!map.hasImage(SHIP_WAKE_ICON_NAME)) {
+    map.addImage(SHIP_WAKE_ICON_NAME, createWakeIcon(), { pixelRatio: SHIP_ICON_PIXEL_RATIO });
   }
 }
 
