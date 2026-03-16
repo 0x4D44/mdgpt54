@@ -48,8 +48,9 @@ export type HealthStatus = {
   clients: number;
   activeShipBbox: Bbox | null;
   shipTracks: number;
+  aisstream: "disconnected" | "connecting" | "connected";
   uptime: number;
-  memoryMB: number;
+  memoryMB: { rss: number; heapUsed: number };
 };
 
 export type TrafficRelayApp = {
@@ -240,13 +241,23 @@ export function createTrafficRelayApp(options: TrafficRelayAppOptions = {}): Tra
     }
   }
 
+  function getAISStreamState(): "disconnected" | "connecting" | "connected" {
+    if (!shipSocket || shipSocket.readyState > SOCKET_OPEN) return "disconnected";
+    return shipSocket.readyState === SOCKET_OPEN ? "connected" : "connecting";
+  }
+
   function getHealthStatus(): HealthStatus {
+    const mem = process.memoryUsage();
     return {
       clients: relay.getClientCount(),
       activeShipBbox: relay.getActiveShipBbox(),
       shipTracks: relay.getShipTrackCount(),
+      aisstream: getAISStreamState(),
       uptime: process.uptime(),
-      memoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024 * 10) / 10,
+      memoryMB: {
+        rss: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
+        heapUsed: Math.round(mem.heapUsed / 1024 / 1024 * 10) / 10,
+      },
     };
   }
 

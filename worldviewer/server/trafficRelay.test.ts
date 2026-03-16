@@ -820,6 +820,62 @@ describe("createTrafficRelayApp", () => {
     app.dispose();
   });
 
+  it("reports aisstream state as disconnected when no ship socket exists", () => {
+    const app = createTrafficRelayApp({
+      shipsApiKey: null,
+      log: quietLog,
+    });
+
+    expect(app.getHealthStatus().aisstream).toBe("disconnected");
+
+    app.dispose();
+  });
+
+  it("reports aisstream state as connecting then connected as the socket opens", () => {
+    const shipSockets: FakeShipSocket[] = [];
+    const app = createTrafficRelayApp({
+      shipsApiKey: "test-key",
+      createShipSocket: () => {
+        const socket = new FakeShipSocket();
+        shipSockets.push(socket);
+        return socket;
+      },
+      log: quietLog,
+    });
+    const client = new FakeClientSocket();
+
+    app.handleClientConnection(client);
+    client.emit("message", subscribe(EDINBURGH_BOX, false, true));
+
+    // Socket is CONNECTING (readyState 0)
+    expect(app.getHealthStatus().aisstream).toBe("connecting");
+
+    // Socket opens
+    shipSockets[0].emit("open");
+    expect(app.getHealthStatus().aisstream).toBe("connected");
+
+    // Socket closes
+    shipSockets[0].emit("close");
+    expect(app.getHealthStatus().aisstream).toBe("disconnected");
+
+    app.dispose();
+  });
+
+  it("reports memoryMB with rss and heapUsed sub-fields", () => {
+    const app = createTrafficRelayApp({
+      shipsApiKey: null,
+      log: quietLog,
+    });
+
+    const health = app.getHealthStatus();
+    expect(typeof health.memoryMB.rss).toBe("number");
+    expect(health.memoryMB.rss).toBeGreaterThan(0);
+    expect(typeof health.memoryMB.heapUsed).toBe("number");
+    expect(health.memoryMB.heapUsed).toBeGreaterThan(0);
+
+    app.dispose();
+  });
+
   it("calls log.debug when a client sends malformed JSON", () => {
     const debugCalls: unknown[][] = [];
     const app = createTrafficRelayApp({
@@ -936,10 +992,14 @@ describe("startTrafficRelayServer", () => {
       expect(body.clients).toBe(0);
       expect(body.activeShipBbox).toBeNull();
       expect(body.shipTracks).toBe(0);
+      expect(body.aisstream).toBe("disconnected");
       expect(typeof body.uptime).toBe("number");
       expect(body.uptime).toBeGreaterThan(0);
-      expect(typeof body.memoryMB).toBe("number");
-      expect(body.memoryMB).toBeGreaterThan(0);
+      expect(typeof body.memoryMB).toBe("object");
+      expect(typeof body.memoryMB.rss).toBe("number");
+      expect(body.memoryMB.rss).toBeGreaterThan(0);
+      expect(typeof body.memoryMB.heapUsed).toBe("number");
+      expect(body.memoryMB.heapUsed).toBeGreaterThan(0);
     } finally {
       await server.close();
     }
