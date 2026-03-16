@@ -2,7 +2,7 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   formatShardSizeLine,
@@ -51,6 +51,27 @@ describe("generateAircraftIdentity", () => {
       "00ff10": ["G-TEST", "A20N", "Airbus", "A320neo"]
     });
     await expect(access(join(outputDir, "stale.json"))).rejects.toThrow();
+  });
+
+  it("skips rows with invalid ICAO24 values", async () => {
+    const root = await makeTempRoot();
+    const inputPath = join(root, "aircraft.csv");
+    const outputDir = join(root, "aircraft-identity");
+
+    await writeFile(
+      inputPath,
+      [
+        "icao24,registration,typecode,manufacturername,model",
+        "INVALID,N123AB,B738,Boeing,737-800",
+        "aabb00,N200,A320,Airbus,A320"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const summaries = await generateAircraftIdentity({ inputPath, outputDir });
+
+    const aaSummary = summaries.find((s) => s.prefix === "aa")!;
+    expect(aaSummary.entries).toBe(1);
   });
 
   it("accepts output directory paths with trailing slashes", async () => {
@@ -222,5 +243,60 @@ describe("isAircraftIdentityGeneratorEntrypoint", () => {
 
   it("returns false for undefined", () => {
     expect(isAircraftIdentityGeneratorEntrypoint(undefined)).toBe(false);
+  });
+});
+
+describe("CLI entrypoint", () => {
+  let savedArgv: string[];
+
+  beforeEach(() => {
+    savedArgv = [...process.argv];
+  });
+
+  afterEach(() => {
+    process.argv = savedArgv;
+    vi.restoreAllMocks();
+  });
+
+  it("main() generates shards and logs output when invoked as entrypoint", async () => {
+    const root = await makeTempRoot();
+    const inputPath = join(root, "aircraft.csv");
+    const outputDir = join(root, "aircraft-identity");
+
+    await writeFile(
+      inputPath,
+      ["icao24,registration,typecode,manufacturername,model", "aabb00,N100,B738,Boeing,737-800"].join("\n"),
+      "utf8"
+    );
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "generateAircraftIdentity.ts", "--input", inputPath, "--output", outputDir];
+    vi.resetModules();
+    await import("./generateAircraftIdentity");
+
+    // Allow the async main() to settle
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Generated 256 aircraft identity shards"));
+    await expect(access(join(outputDir, "aa.json"))).resolves.toBeUndefined();
+  });
+
+  it("entrypoint catch handler logs error and sets exitCode on failure", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "generateAircraftIdentity.ts", "--input", "/nonexistent/path.csv", "--output", "aircraft-identity"];
+    vi.resetModules();
+    await import("./generateAircraftIdentity");
+
+    // Allow the async main().catch() to settle
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+
+    // Clean up exitCode to not affect other tests
+    process.exitCode = undefined;
   });
 });

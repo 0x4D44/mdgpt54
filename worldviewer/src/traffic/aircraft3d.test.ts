@@ -287,6 +287,12 @@ describe("selectAircraft3dClass", () => {
     expect(selectAircraft3dClass(makeTrack({ aircraftCategory: 10 }))).toBe("prop");
   });
 
+  it("falls through descriptor keywords to category when manufacturer/model has no recognized keyword", () => {
+    expect(
+      selectAircraft3dClass(makeTrack({ manufacturer: "Unknown Mfg", model: "Exotic X99", aircraftCategory: 7 }))
+    ).toBe("bizjet");
+  });
+
   it("defaults to narrow-body when no type code, descriptor, or category matches", () => {
     expect(selectAircraft3dClass(makeTrack({ aircraftCategory: null }))).toBe("narrow-body");
     expect(selectAircraft3dClass(makeTrack({ aircraftCategory: 99 }))).toBe("narrow-body");
