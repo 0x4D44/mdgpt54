@@ -9,8 +9,7 @@ import {
   formatWeatherRadarStatus,
   parseLatestWeatherRadarFrame
 } from "./weatherRadar";
-
-type LoadListener = () => void;
+import { createMockMap } from "./test/createMockMap";
 
 type SourceRecord = {
   attribution?: string;
@@ -21,65 +20,18 @@ type SourceRecord = {
   type?: string;
 };
 
-class MockMap {
-  styleLoaded = true;
-  readonly addSource = vi.fn((id: string, source: SourceRecord) => {
-    const storedSource: SourceRecord = {
-      ...source,
-      setTiles: vi.fn((tiles: string[]) => {
-        storedSource.tiles = tiles;
-      })
-    };
-    this.sources.set(id, storedSource);
-  });
-  readonly getSource = vi.fn((id: string) => this.sources.get(id));
-  readonly addLayer = vi.fn((layer: { id: string }, beforeId?: string) => {
-    this.layers.set(layer.id, layer);
-    this.layerAnchors.set(layer.id, beforeId);
-  });
-  readonly getLayer = vi.fn((id: string) => this.layers.get(id));
-  readonly removeLayer = vi.fn((id: string) => {
-    this.layers.delete(id);
-    this.layerAnchors.delete(id);
-  });
-  readonly removeSource = vi.fn((id: string) => {
-    this.sources.delete(id);
-  });
-  readonly isStyleLoaded = vi.fn(() => this.styleLoaded);
-  readonly on = vi.fn((event: string, listener: LoadListener) => {
-    if (event === "load") {
-      this.loadListeners.add(listener);
+function createWeatherMockMap() {
+  return createMockMap({
+    sourceFactory: (_id, source) => {
+      const stored: Record<string, unknown> = {
+        ...source,
+        setTiles: vi.fn((tiles: string[]) => {
+          stored.tiles = tiles;
+        })
+      };
+      return stored;
     }
   });
-  readonly off = vi.fn((event: string, listener: LoadListener) => {
-    if (event === "load") {
-      this.loadListeners.delete(listener);
-    }
-  });
-  readonly getStyle = vi.fn(() => ({
-    layers: [
-      { id: "background", type: "background" },
-      { id: "satellite-imagery", type: "raster", source: "satellite" },
-      { id: "road_minor", type: "line" },
-      { id: "label_city", type: "symbol", layout: { "text-field": ["get", "name"] } }
-    ]
-  }));
-
-  private readonly sources = new Map<string, SourceRecord>();
-  private readonly layers = new Map<string, unknown>();
-  private readonly layerAnchors = new Map<string, string | undefined>();
-  private readonly loadListeners = new Set<LoadListener>();
-
-  emitLoad(): void {
-    this.styleLoaded = true;
-    for (const listener of [...this.loadListeners]) {
-      listener();
-    }
-  }
-
-  getLayerAnchor(id: string): string | undefined {
-    return this.layerAnchors.get(id);
-  }
 }
 
 function createJsonResponse(payload: unknown, status = 200) {
@@ -133,6 +85,31 @@ describe("weatherRadar", () => {
     expect(formatWeatherRadarStatus(timeSeconds)).toBe("Radar frame 12:10 UTC - RainViewer");
   });
 
+  it("returns null for non-object metadata", () => {
+    expect(parseLatestWeatherRadarFrame(null)).toBeNull();
+    expect(parseLatestWeatherRadarFrame(42)).toBeNull();
+    expect(parseLatestWeatherRadarFrame("string")).toBeNull();
+  });
+
+  it("skips non-object candidates in past frames", () => {
+    const frame = parseLatestWeatherRadarFrame({
+      host: "https://tilecache.rainviewer.com",
+      radar: {
+        past: [
+          42,
+          "string",
+          null,
+          { time: 1_763_000_000, path: "/v2/radar/1" }
+        ]
+      }
+    });
+    expect(frame).toEqual({
+      host: "https://tilecache.rainviewer.com",
+      path: "/v2/radar/1",
+      time: 1_763_000_000
+    });
+  });
+
   it("treats missing host or usable past frames as unavailable metadata", () => {
     expect(
       parseLatestWeatherRadarFrame({
@@ -176,7 +153,7 @@ describe("weatherRadar", () => {
     ];
     const fetchImpl = vi.fn(async () => responses.shift()!);
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       updateIntervalMs: 5,
@@ -237,7 +214,7 @@ describe("weatherRadar", () => {
     ];
     const fetchImpl = vi.fn(async () => responses.shift()!);
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       updateIntervalMs: 5,
@@ -266,7 +243,7 @@ describe("weatherRadar", () => {
   it("reports unavailable when the metadata request fails", async () => {
     const fetchImpl = vi.fn(async () => createJsonResponse({}, 503));
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       onStateChange
@@ -293,7 +270,7 @@ describe("weatherRadar", () => {
       })
     );
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     map.styleLoaded = false;
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
@@ -330,7 +307,7 @@ describe("weatherRadar", () => {
       })
     );
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     map.styleLoaded = false;
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
@@ -357,7 +334,7 @@ describe("weatherRadar", () => {
         })
     );
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       onStateChange
@@ -392,7 +369,7 @@ describe("weatherRadar", () => {
         })
     );
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       updateIntervalMs: 5,
@@ -468,7 +445,7 @@ describe("weatherRadar", () => {
       });
     });
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       onStateChange
@@ -526,7 +503,7 @@ describe("weatherRadar", () => {
         }
       })
     );
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl
     });
@@ -550,7 +527,7 @@ describe("weatherRadar", () => {
       })
     );
     const onStateChange = vi.fn();
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       updateIntervalMs: 5,
@@ -583,7 +560,7 @@ describe("weatherRadar", () => {
       })
     ];
     const fetchImpl = vi.fn(async () => responses.shift()!);
-    const map = new MockMap();
+    const map = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({
       fetchImpl,
       updateIntervalMs: 5
@@ -611,8 +588,8 @@ describe("weatherRadar", () => {
         }
       })
     );
-    const map1 = new MockMap();
-    const map2 = new MockMap();
+    const map1 = createWeatherMockMap();
+    const map2 = createWeatherMockMap();
     const overlay = createWeatherRadarOverlay({ fetchImpl });
 
     overlay.enable(map1 as never);
@@ -653,5 +630,82 @@ describe("weatherRadar", () => {
 
   it("throws when buildWeatherRadarTileUrl receives an empty host", () => {
     expect(() => buildWeatherRadarTileUrl("  ", "/v2/radar/1")).toThrow();
+  });
+
+  it("silently returns when fetch is aborted during refresh", async () => {
+    let rejectFetch: (reason: unknown) => void;
+    const fetchImpl = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof createJsonResponse>>((_resolve, reject) => {
+          rejectFetch = reject;
+        })
+    );
+    const onStateChange = vi.fn();
+    const map = createWeatherMockMap();
+    const overlay = createWeatherRadarOverlay({ fetchImpl, onStateChange });
+
+    overlay.enable(map as never);
+    await flushAsyncWork();
+
+    // Simulate an abort error
+    const abortError = new DOMException("The operation was aborted.", "AbortError");
+    rejectFetch!(abortError);
+    await flushAsyncWork();
+
+    // Should not publish unavailable presentation on abort
+    const lastCall = onStateChange.mock.calls.at(-1);
+    expect(lastCall?.[0]?.note).not.toBe("Radar unavailable");
+  });
+
+  it("ignores a stale timer tick after disable", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: { past: [{ time: 1_763_000_000, path: "/v2/radar/1" }] }
+      })
+    );
+    const map = createWeatherMockMap();
+    const overlay = createWeatherRadarOverlay({
+      fetchImpl,
+      updateIntervalMs: 60_000
+    });
+
+    overlay.enable(map as never);
+    await flushAsyncWork();
+    const callsAfterEnable = fetchImpl.mock.calls.length;
+
+    overlay.disable(map as never);
+
+    // Advance past the refresh interval - timer should be cleared
+    vi.advanceTimersByTime(60_000);
+    await flushAsyncWork();
+
+    expect(fetchImpl.mock.calls.length).toBe(callsAfterEnable);
+  });
+
+  it("ignores stale apply callback when overlay is disabled before style loads", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: { past: [{ time: 1_763_000_000, path: "/v2/radar/1" }] }
+      })
+    );
+
+    const map = createWeatherMockMap();
+    map.styleLoaded = false;
+
+    const overlay = createWeatherRadarOverlay({ fetchImpl });
+
+    overlay.enable(map as never);
+
+    // Disable before the load event fires
+    overlay.disable(map as never);
+
+    // Now simulate the load event firing
+    map.emitLoad();
+    await flushAsyncWork();
+
+    // The stale load handler should not trigger a fetch
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

@@ -256,7 +256,7 @@ describe("Aircraft3dController", () => {
     expect(map.addLayer).toHaveBeenCalledTimes(1);
 
     // After the layer is loaded, getLayer should report it as present for the dispose path.
-    map.getLayer.mockReturnValue({});
+    map.getLayer.mockReturnValue({} as any);
     controller.dispose();
 
     expect(map.removeLayer).toHaveBeenCalledTimes(1);
@@ -371,7 +371,7 @@ describe("Aircraft3dController", () => {
         nearZ: 0,
         shaderData: { useStencilMasking: false, isInShadowPass: false }
       }
-    });
+    } as any);
     expect(mockRenderer.resetState).toHaveBeenCalledTimes(1);
     expect(mockRenderer.render).toHaveBeenCalledTimes(1);
 
@@ -414,7 +414,7 @@ describe("Aircraft3dController", () => {
           nearZ: 0,
           shaderData: { useStencilMasking: false, isInShadowPass: false }
         }
-      });
+      } as any);
     }).not.toThrow();
 
     controller.dispose();

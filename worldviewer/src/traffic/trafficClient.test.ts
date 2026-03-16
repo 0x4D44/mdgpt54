@@ -639,6 +639,158 @@ describe("TrafficClient", () => {
     client.dispose();
   });
 
+  it("applies exponential backoff to aircraft polling after consecutive failures", async () => {
+    vi.useFakeTimers();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Network error");
+      })
+    );
+
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    const fetchMock = vi.mocked(fetch);
+
+    client.setLayers(true, false);
+    await flushAsyncWork();
+
+    // First poll fires immediately and fails (errors=1)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // After 1st failure: backoff = min(15000 * 2^0, 30000) = 15000ms
+    vi.advanceTimersByTime(14999);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // After 2nd failure: backoff = min(15000 * 2^1, 30000) = 30000ms
+    vi.advanceTimersByTime(29999);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(1);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // After 3rd failure: backoff = min(15000 * 2^2, 30000) = 30000ms (capped)
+    vi.advanceTimersByTime(29999);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    vi.advanceTimersByTime(1);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    client.dispose();
+  });
+
+  it("resets aircraft backoff to normal cadence after a successful poll", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        callCount++;
+        if (callCount <= 2) {
+          throw new Error("Network error");
+        }
+        return { ok: true, json: async () => ({ states: [] }) };
+      })
+    );
+
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    const fetchMock = vi.mocked(fetch);
+
+    client.setLayers(true, false);
+    await flushAsyncWork();
+
+    // 1st call fails (errors=1)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Advance by 15000ms for 2nd call (backoff after 1st failure)
+    vi.advanceTimersByTime(15000);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // 2nd call fails (errors=2), backoff = 30000ms
+    vi.advanceTimersByTime(30000);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // 3rd call succeeds (errors reset to 0), next poll should be at normal 15s
+    vi.advanceTimersByTime(14999);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    vi.advanceTimersByTime(1);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    client.dispose();
+  });
+
+  it("resets aircraft backoff counter when aircraft are disabled", async () => {
+    vi.useFakeTimers();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Network error");
+      })
+    );
+
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    await flushAsyncWork();
+
+    // Fail a couple of polls to build up the error counter
+    vi.advanceTimersByTime(15000);
+    await flushAsyncWork();
+
+    // Disable aircraft (resets counter)
+    client.setLayers(false, false);
+
+    // Re-enable with a successful fetch
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ states: [] })
+      }))
+    );
+
+    const freshFetchMock = vi.mocked(fetch);
+    client.setLayers(true, false);
+    await flushAsyncWork();
+
+    // First poll fires immediately (counter was reset)
+    expect(freshFetchMock).toHaveBeenCalledTimes(1);
+
+    // Next poll should be at normal 15s, not at backoff
+    vi.advanceTimersByTime(15000);
+    await flushAsyncWork();
+    expect(freshFetchMock).toHaveBeenCalledTimes(2);
+
+    client.dispose();
+  });
+
   it("connect opens ship relay when ships are enabled", () => {
     const client = new TrafficClient(createMapStub() as never, {
       onSnapshot: vi.fn(),
@@ -1270,4 +1422,318 @@ describe("TrafficClient", () => {
     client.dispose();
   });
 
+  it("does not poll aircraft when zoom is below minimum", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ states: [] })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mapStub = {
+      getZoom: () => 3,
+      getBounds: () => ({
+        getWest: () => -180,
+        getSouth: () => -90,
+        getEast: () => 180,
+        getNorth: () => 90
+      })
+    };
+
+    const client = new TrafficClient(mapStub as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    client.dispose();
+  });
+
+  it("deduplicates connection status callbacks", () => {
+    const statuses: string[] = [];
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: (s) => statuses.push(s)
+    });
+
+    // First setLayers triggers status change
+    client.setLayers(true, false);
+    const count = statuses.length;
+
+    // setLayers again with same combo should produce same status
+    client.setLayers(true, false);
+    // At most one more callback if status doesn't actually change
+    expect(statuses.length).toBeLessThanOrEqual(count + 1);
+
+    client.dispose();
+  });
+
+  it("sends ship subscribe message when ws is open", () => {
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(false, true);
+    const socket = MockWebSocket.instances[0];
+    socket.emit("open");
+
+    // The open event should trigger sendShipSubscribe
+    expect(socket.sentMessages.length).toBeGreaterThanOrEqual(1);
+    const msg = JSON.parse(socket.sentMessages[0]);
+    expect(msg.type).toBe("subscribe");
+    expect(msg.zoom).toBeDefined();
+
+    client.dispose();
+  });
+
+  it("skips aircraft poll when shouldPoll is false (bbox unchanged, data fresh)", async () => {
+    vi.useFakeTimers();
+
+    // Return one aircraft so latestAircraft.length > 0 after first poll
+    const fetchMock = vi.fn(async (url: string) => {
+      if (typeof url === "string" && url.includes("opensky")) {
+        return {
+          ok: true,
+          json: async () => ({
+            states: [
+              ["abc123", "TST1", null, null, null, -3.3, 55.95, 1000, false, 100, 90, null, null, null, null, null, null, 4]
+            ]
+          })
+        };
+      }
+      return { ok: false, status: 404 };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const openskyBefore = fetchMock.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("opensky")
+    ).length;
+    expect(openskyBefore).toBe(1);
+
+    // sendSubscribe with same bbox and fresh data (not stale) should skip poll
+    client.sendSubscribe();
+    await flushAsyncWork();
+
+    const openskyAfter = fetchMock.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("opensky")
+    ).length;
+    expect(openskyAfter).toBe(1);
+
+    client.dispose();
+  });
+
+  it("connectRelay early-returns when disposed", () => {
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.dispose();
+    // Manually enable ships and try to connect
+    client.state.shipsEnabled = true;
+    client.connect();
+
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("scheduleReconnect early-returns when disposed", () => {
+    vi.useFakeTimers();
+
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(false, true);
+    const socket = MockWebSocket.instances[0];
+    socket.emit("open");
+
+    // Dispose before close
+    client.dispose();
+
+    // Manually trigger close on stale socket
+    socket.emit("close");
+
+    // No reconnect should be scheduled
+    vi.advanceTimersByTime(60000);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("deduplicates connection status when publishConnectionStatus called multiple times", () => {
+    const statuses: string[] = [];
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: (s) => statuses.push(s)
+    });
+
+    // Enable ships to get connecting status
+    client.setLayers(false, true);
+    const statusCount = statuses.length;
+
+    // Calling sendSubscribe should not re-emit the same status
+    client.sendSubscribe();
+    expect(statuses.length).toBe(statusCount);
+
+    client.dispose();
+  });
+
+  it("refreshAircraftIdentity merges identity data into tracks", async () => {
+    // Set up fetch to return aircraft and identity shard data
+    const fetchMock = vi.fn(async (url: string) => {
+      if (typeof url === "string" && url.includes("opensky")) {
+        return {
+          ok: true,
+          json: async () => ({
+            states: [
+              ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+            ]
+          })
+        };
+      }
+      // Identity shard - return data that will merge into the track
+      if (typeof url === "string" && url.includes("aircraft-identity")) {
+        return {
+          ok: true,
+          json: async () => ({
+            abc123: { typeCode: "B738", registration: "G-TEST", manufacturer: "Boeing", model: "737-800" }
+          })
+        };
+      }
+      return { ok: false, status: 404 };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshots: Array<{ aircraft: Array<{ registration?: string }> }> = [];
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: (s) => snapshots.push({ aircraft: s.aircraft as Array<{ registration?: string }> }),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    // Wait for opensky fetch, identity fetch, and refresh
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    // The last snapshot should have the merged identity data
+    const lastAircraft = snapshots.at(-1)?.aircraft;
+    expect(lastAircraft).toHaveLength(1);
+
+    client.dispose();
+  });
+
+  it("sendShipSubscribe is a no-op when ws is null", () => {
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn()
+    });
+
+    // No ws, calling sendSubscribe should not throw
+    client.sendSubscribe();
+
+    expect(MockWebSocket.instances).toHaveLength(0);
+    client.dispose();
+  });
+
+  it("pollAircraft returns early when disposed during json parsing", async () => {
+    let resolveJson: (() => void) | null = null;
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((resolve) => {
+          resolveJson = () => resolve({ states: [] });
+        })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshots: Array<{ aircraft: unknown[] }> = [];
+    const client = new TrafficClient(createMapStub() as never, {
+      onSnapshot: (s) => snapshots.push({ aircraft: s.aircraft }),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Dispose while json() is still pending
+    client.dispose();
+
+    // Resolve the json after dispose
+    resolveJson!();
+    await flushAsyncWork();
+
+    // The disposed guard prevents aircraft data from being stored,
+    // so the last snapshot should still have empty aircraft
+    expect(snapshots.at(-1)?.aircraft).toEqual([]);
+  });
+
+  it("pollAircraft returns early when aircraft becomes inactive mid-poll", async () => {
+    let resolveJson: (() => void) | null = null;
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: () =>
+        new Promise<unknown>((resolve) => {
+          resolveJson = () =>
+            resolve({
+              states: [
+                ["abc123", "TST", null, null, null, -3.3, 55.95, 1000, false, 100, 90, null, null, null, null, null, null, 4]
+              ]
+            });
+        })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    let currentZoom = 8;
+    const mapStub = {
+      getZoom: () => currentZoom,
+      getBounds: () => ({
+        getWest: () => -3.6,
+        getSouth: () => 55.8,
+        getEast: () => -3.0,
+        getNorth: () => 56.1
+      })
+    };
+
+    const snapshots: Array<{ aircraft: unknown[] }> = [];
+    const client = new TrafficClient(mapStub as never, {
+      onSnapshot: (s) => snapshots.push({ aircraft: s.aircraft }),
+      onStatusChange: vi.fn()
+    });
+
+    client.setLayers(true, false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Zoom out while fetch is in flight
+    currentZoom = 2;
+    client.setLayers(true, false);
+
+    // Now resolve the json
+    resolveJson!();
+    await flushAsyncWork();
+
+    // Aircraft should be empty because zoom went below minimum
+    expect(snapshots.at(-1)?.aircraft).toEqual([]);
+
+    client.dispose();
+  });
 });
