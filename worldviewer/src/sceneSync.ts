@@ -15,6 +15,7 @@ import {
 } from "./reliefProfile";
 import type { MapState } from "./mapState";
 import type { WeatherRadarPresentation } from "./overlays/weatherRadar";
+import type { EarthquakePresentation } from "./overlays/earthquakeOverlay";
 import { syncMetrics, type MetricElements } from "./metricUI";
 
 export type OverlayLike = {
@@ -28,9 +29,11 @@ export type SceneSyncDeps = {
   metricElements: MetricElements;
   solarTerminator: OverlayLike;
   weatherRadar: OverlayLike;
+  earthquakeOverlay: OverlayLike;
   measureTool: OverlayLike;
   dismissPopup: () => void;
   getWeatherRadarPresentation: () => WeatherRadarPresentation;
+  getEarthquakePresentation: () => EarthquakePresentation;
   getMeasureNote: () => string | null;
   sceneOverlayNote: HTMLElement;
   sceneOverlayCredit: HTMLElement;
@@ -163,7 +166,7 @@ export function spinGlobe(map: Map, mapState: MapState): void {
 }
 
 export function syncSceneOverlays(map: Map, deps: SceneSyncDeps): void {
-  const { mapState, solarTerminator, weatherRadar, measureTool } = deps;
+  const { mapState, solarTerminator, weatherRadar, earthquakeOverlay, measureTool } = deps;
 
   if (shouldShowNightOverlay(mapState.nightEnabled, mapState.projectionMode)) {
     solarTerminator.enable(map);
@@ -177,6 +180,12 @@ export function syncSceneOverlays(map: Map, deps: SceneSyncDeps): void {
     weatherRadar.disable(map);
   }
 
+  if (mapState.earthquakeEnabled) {
+    earthquakeOverlay.enable(map);
+  } else {
+    earthquakeOverlay.disable(map);
+  }
+
   if (mapState.measureEnabled) {
     measureTool.enable(map);
   } else {
@@ -187,8 +196,12 @@ export function syncSceneOverlays(map: Map, deps: SceneSyncDeps): void {
 }
 
 export function renderSceneOverlayPresentation(deps: SceneSyncDeps): void {
-  const { mapState, sceneOverlayNote, sceneOverlayCredit, getWeatherRadarPresentation, getMeasureNote } = deps;
+  const {
+    mapState, sceneOverlayNote, sceneOverlayCredit,
+    getWeatherRadarPresentation, getEarthquakePresentation, getMeasureNote
+  } = deps;
   const weatherRadarPresentation = getWeatherRadarPresentation();
+  const earthquakePresentation = getEarthquakePresentation();
   const measureNote = getMeasureNote();
   const notes: string[] = [];
   const credits: string[] = [];
@@ -199,11 +212,17 @@ export function renderSceneOverlayPresentation(deps: SceneSyncDeps): void {
   if (weatherRadarPresentation.note) {
     notes.push(weatherRadarPresentation.note);
   }
+  if (earthquakePresentation.note) {
+    notes.push(earthquakePresentation.note);
+  }
   if (measureNote) {
     notes.push(measureNote);
   }
   if (weatherRadarPresentation.creditLabel) {
     credits.push(weatherRadarPresentation.creditLabel);
+  }
+  if (earthquakePresentation.creditLabel) {
+    credits.push(earthquakePresentation.creditLabel);
   }
 
   sceneOverlayNote.hidden = notes.length === 0;

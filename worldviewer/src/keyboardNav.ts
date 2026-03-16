@@ -2,6 +2,7 @@ const TOGGLE_KEYS: Record<string, string> = {
   t: "terrain",
   n: "night",
   w: "weather",
+  e: "earthquakes",
   a: "aircraft",
   s: "ships",
   b: "buildings",

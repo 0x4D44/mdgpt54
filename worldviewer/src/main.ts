@@ -16,6 +16,10 @@ import {
   createWeatherRadarOverlay,
   type WeatherRadarPresentation
 } from "./overlays/weatherRadar";
+import {
+  createEarthquakeOverlay,
+  type EarthquakePresentation
+} from "./overlays/earthquakeOverlay";
 import { createMeasureTool, type MeasureState, type MeasureResult } from "./overlays/measureTool";
 import { formatDistance, formatBearing } from "./overlays/measureGeodesic";
 import { TrafficClient } from "./traffic/trafficClient";
@@ -218,6 +222,7 @@ app.innerHTML = `
           <button type="button" class="toggle-chip is-active" data-toggle="relief" aria-pressed="true">Relief</button>
           <button type="button" class="toggle-chip is-active" data-toggle="night" aria-pressed="true">Night</button>
           <button type="button" class="toggle-chip" data-toggle="weather" aria-pressed="false">Weather</button>
+          <button type="button" class="toggle-chip" data-toggle="earthquakes" aria-pressed="false">Quakes</button>
           <button type="button" class="toggle-chip is-active" data-toggle="buildings" aria-pressed="true">3D Buildings</button>
           <button type="button" class="toggle-chip is-active" data-toggle="spin" aria-pressed="true">Orbit Spin</button>
           <button type="button" class="toggle-chip" data-toggle="measure" aria-pressed="false">Measure</button>
@@ -315,6 +320,17 @@ const weatherRadar = createWeatherRadarOverlay({
   }
 });
 
+let earthquakePresentation: EarthquakePresentation = {
+  note: null,
+  creditLabel: null
+};
+const earthquakeOverlay = createEarthquakeOverlay({
+  onStateChange: (presentation) => {
+    earthquakePresentation = presentation;
+    renderSceneOverlayPresentation(sceneSyncDeps);
+  }
+});
+
 let measureNote: string | null = null;
 const measureTool = createMeasureTool({
   onStateChange: (_state: MeasureState, result: MeasureResult | null) => {
@@ -331,6 +347,7 @@ const mapState: MapState = {
   reliefEnabled: true,
   nightEnabled: true,
   weatherEnabled: false,
+  earthquakeEnabled: false,
   measureEnabled: false,
   autoSpinEnabled: true,
   userInteracting: false,
@@ -353,9 +370,11 @@ const sceneSyncDeps: SceneSyncDeps = {
   metricElements,
   solarTerminator,
   weatherRadar,
+  earthquakeOverlay,
   measureTool,
   dismissPopup,
   getWeatherRadarPresentation: () => weatherRadarPresentation,
+  getEarthquakePresentation: () => earthquakePresentation,
   getMeasureNote: () => measureNote,
   sceneOverlayNote,
   sceneOverlayCredit
@@ -808,6 +827,12 @@ function wireToggles(): void {
           button.classList.toggle("is-active", mapState.weatherEnabled);
           syncSceneOverlays(mapInstance, sceneSyncDeps);
           statusPill.textContent = mapState.weatherEnabled ? "Weather radar enabled." : "Weather radar hidden.";
+          break;
+        case "earthquakes":
+          mapState.earthquakeEnabled = !mapState.earthquakeEnabled;
+          button.classList.toggle("is-active", mapState.earthquakeEnabled);
+          syncSceneOverlays(mapInstance, sceneSyncDeps);
+          statusPill.textContent = mapState.earthquakeEnabled ? "Earthquake layer enabled." : "Earthquake layer hidden.";
           break;
         case "measure":
           mapState.measureEnabled = !mapState.measureEnabled;
