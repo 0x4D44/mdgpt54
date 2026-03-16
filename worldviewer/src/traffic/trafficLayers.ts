@@ -7,6 +7,12 @@ import {
   aircraftIconSizeExpression
 } from "./aircraftIconSizing";
 import {
+  addFlightRouteLayer,
+  clearFlightRoute,
+  resolveFlightRouteCached,
+  showFlightRoute
+} from "./flightRoute";
+import {
   createShipIcon,
   createWakeIcon,
   SHIP_ICON_NAME,
@@ -62,6 +68,7 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", feature
 
 let trafficPopup: Popup | null = null;
 let trafficPopupOwner: LiveTrackKind | null = null;
+let routeAbortController: AbortController | null = null;
 
 /** Add GeoJSON sources and layers for live traffic to the map. */
 export function addTrafficLayers(map: Map): void {
@@ -222,6 +229,8 @@ export function addTrafficLayers(map: Map): void {
     }
   });
 
+  addFlightRouteLayer(map);
+
   wireTrafficPopups(map);
 }
 
@@ -240,7 +249,7 @@ export function updateTrafficData(
     );
   }
   if (snapshot.aircraft.length === 0) {
-    clearTrafficPopup("aircraft");
+    clearTrafficPopup("aircraft", map);
   }
 
   const shipsSource = map.getSource(SHIPS_SOURCE);
@@ -250,7 +259,7 @@ export function updateTrafficData(
     );
   }
   if (snapshot.ships.length === 0) {
-    clearTrafficPopup("ship");
+    clearTrafficPopup("ship", map);
   }
 }
 
@@ -270,7 +279,7 @@ export function clearAircraftData(map: Map): void {
   }
 
   clearTrailData(map);
-  clearTrafficPopup("aircraft");
+  clearTrafficPopup("aircraft", map);
 }
 
 /** Clear only the ships source. */
@@ -280,14 +289,14 @@ export function clearShipsData(map: Map): void {
     (source as { setData(data: GeoJSON.FeatureCollection): void }).setData(EMPTY_FC);
   }
 
-  clearTrafficPopup("ship");
+  clearTrafficPopup("ship", map);
 }
 
 /** Clear both traffic sources to empty. */
 export function clearTrafficData(map: Map): void {
   clearAircraftData(map);
   clearShipsData(map);
-  clearTrafficPopup();
+  clearTrafficPopup(undefined, map);
 }
 
 function clearTrailData(map: Map): void {
@@ -329,23 +338,36 @@ function wireTrafficPopups(map: Map): void {
 }
 
 function showTrafficPopup(map: Map, coords: [number, number], props: Record<string, unknown>): void {
-  clearTrafficPopup();
+  clearTrafficPopup(undefined, map);
 
   const kind = props.kind === "ship" ? "ship" : "aircraft";
   const updatedAt = typeof props.updatedAt === "number" ? props.updatedAt : 0;
   const age = formatAge(updatedAt, Date.now());
-  const html = kind === "aircraft" ? buildAircraftPopupHtml(props, age) : buildShipPopupHtml(props, age);
+  const callsign = readString(props.callsign);
+  const html = kind === "aircraft" ? buildAircraftPopupHtml(props, age, callsign) : buildShipPopupHtml(props, age);
 
   trafficPopup = new Popup({ closeButton: false, maxWidth: "280px", offset: 18 })
     .setLngLat(coords)
     .setHTML(html)
     .addTo(map);
   trafficPopupOwner = kind;
+
+  // Wire "Show route" action for aircraft with a callsign
+  if (kind === "aircraft" && callsign) {
+    wireRouteAction(map, callsign);
+  }
 }
 
-function clearTrafficPopup(owner?: LiveTrackKind): void {
+function clearTrafficPopup(owner?: LiveTrackKind, map?: Map): void {
   if (owner && trafficPopupOwner !== owner) {
     return;
+  }
+
+  routeAbortController?.abort();
+  routeAbortController = null;
+
+  if (map) {
+    clearFlightRoute(map);
   }
 
   trafficPopup?.remove();
@@ -353,7 +375,39 @@ function clearTrafficPopup(owner?: LiveTrackKind): void {
   trafficPopupOwner = null;
 }
 
-function buildAircraftPopupHtml(props: Record<string, unknown>, age: string): string {
+function wireRouteAction(map: Map, callsign: string): void {
+  if (!trafficPopup) return;
+
+  // MapLibre popups expose their DOM container via getElement()
+  const popupEl = (trafficPopup as unknown as { getElement?: () => HTMLElement }).getElement?.();
+  if (!popupEl) return;
+
+  const actionEl = popupEl.querySelector<HTMLElement>("[data-route-action]");
+  if (!actionEl) return;
+
+  actionEl.addEventListener("click", () => {
+    routeAbortController?.abort();
+    const controller = new AbortController();
+    routeAbortController = controller;
+
+    actionEl.textContent = "Loading route\u2026";
+    actionEl.classList.remove("popup-route-action");
+    actionEl.classList.add("popup-route-status");
+
+    void resolveFlightRouteCached(callsign, controller.signal).then((result) => {
+      if (controller.signal.aborted) return;
+
+      if (result) {
+        showFlightRoute(map, result.arc);
+        actionEl.textContent = `${result.origin.icao} \u2192 ${result.destination.icao}`;
+      } else {
+        actionEl.textContent = "Route unavailable";
+      }
+    });
+  });
+}
+
+function buildAircraftPopupHtml(props: Record<string, unknown>, age: string, callsign: string | null): string {
   const identity = buildAircraftPopupIdentity({
     id: readString(props.id) ?? "Unknown aircraft",
     label: readString(props.label),
@@ -371,7 +425,11 @@ function buildAircraftPopupHtml(props: Record<string, unknown>, age: string): st
     geoAltitudeMeters: readNumber(props.geoAltitudeMeters)
   }, true);
 
-  return buildPopupHtml("Aircraft", identity.title, identity.rows, compactText(speed, altitude, age));
+  const routeAction = callsign
+    ? `<span class="popup-route-action" data-route-action>Show route</span>`
+    : "";
+
+  return buildPopupHtml("Aircraft", identity.title, identity.rows, compactText(speed, altitude, age), routeAction);
 }
 
 function buildShipPopupHtml(props: Record<string, unknown>, age: string): string {
@@ -381,7 +439,13 @@ function buildShipPopupHtml(props: Record<string, unknown>, age: string): string
   return buildPopupHtml("Ship", title, [], compactText(speed, source, age));
 }
 
-function buildPopupHtml(kindLabel: string, title: string, rows: string[], details: string | null): string {
+function buildPopupHtml(
+  kindLabel: string,
+  title: string,
+  rows: string[],
+  details: string | null,
+  extraHtml: string = ""
+): string {
   const rowHtml = rows
     .map((row) => `<span class="popup-identity">${escapeHtml(row)}</span>`)
     .join("");
@@ -392,6 +456,7 @@ function buildPopupHtml(kindLabel: string, title: string, rows: string[], detail
       <strong>${escapeHtml(title)}</strong>
       ${rowHtml}
       ${details ? `<span class="popup-meta">${escapeHtml(details)}</span>` : ""}
+      ${extraHtml}
     </div>
   `;
 }

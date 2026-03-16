@@ -448,6 +448,20 @@ h2 {
   font-size: 0.8rem;
 }
 
+.popup-route-action {
+  color: #6366f1;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.popup-route-status {
+  color: #5a6f83;
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
 .maplibregl-popup-content {
   border-radius: 1rem;
   padding: 0.8rem 0.9rem;
