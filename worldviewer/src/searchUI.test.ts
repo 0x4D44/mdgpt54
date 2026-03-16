@@ -411,7 +411,7 @@ describe("wireSearch", () => {
     await Promise.resolve();
 
     // Click the result
-    clickHandler?.();
+    (clickHandler as (() => void) | null)?.();
     expect(fitBounds).toHaveBeenCalledTimes(1);
   });
 
@@ -463,7 +463,7 @@ describe("wireSearch", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    clickHandler?.();
+    (clickHandler as (() => void) | null)?.();
     expect(flyTo).toHaveBeenCalledTimes(1);
   });
 

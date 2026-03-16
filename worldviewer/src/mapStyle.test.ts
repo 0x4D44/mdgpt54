@@ -1,16 +1,130 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DemSourceLike, StyleBuildConfig } from "./mapStyle";
 import {
-  buildMapStyle,
-  selectFillOpacity,
-  selectRoadOpacity,
   BUILDING_LAYER_ID,
   FLAT_BUILDING_LAYER_ID,
-  type DemSourceLike,
-  type StyleBuildConfig
+  buildMapStyle,
+  selectFillOpacity,
+  selectRoadOpacity
 } from "./mapStyle";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeDemSource(): DemSourceLike {
+  return {
+    sharedDemProtocolUrl: "protocol://dem/{z}/{x}/{y}",
+    contourProtocolUrl: vi.fn(() => "protocol://contour/{z}/{x}/{y}")
+  };
+}
+
+function makeConfig(overrides: Partial<StyleBuildConfig> = {}): StyleBuildConfig {
+  return {
+    reliefEnabled: true,
+    terrainExaggeration: 1.2,
+    ...overrides
+  };
+}
+
+/** Minimal base style that exercises every branch in the layer transform. */
+function fakeBaseStyle() {
+  return {
+    version: 8,
+    name: "test",
+    sources: { openmaptiles: { type: "vector" } },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": "#fff" } },
+      {
+        id: "natural_earth",
+        type: "raster",
+        paint: { "raster-opacity": 1 }
+      },
+      {
+        id: "water",
+        type: "fill",
+        paint: { "fill-color": "#aad" }
+      },
+      {
+        id: "landcover",
+        type: "fill",
+        paint: { "fill-color": "#ccc" }
+      },
+      {
+        id: BUILDING_LAYER_ID,
+        type: "fill-extrusion",
+        paint: { "fill-extrusion-color": "#ddd" },
+        layout: { visibility: "visible" }
+      },
+      {
+        id: FLAT_BUILDING_LAYER_ID,
+        type: "fill",
+        paint: { "fill-color": "#eee" }
+      },
+      {
+        id: "label_city",
+        type: "symbol",
+        paint: { "text-color": "#000" }
+      },
+      {
+        id: "road_primary",
+        type: "line",
+        paint: { "line-color": "#aaa" }
+      },
+      {
+        id: "road_primary_casing",
+        type: "line",
+        paint: { "line-color": "#bbb" }
+      },
+      {
+        id: "road_area_pattern",
+        type: "fill",
+        paint: { "fill-color": "#ddd" }
+      },
+      {
+        id: "some_no_paint_layer",
+        type: "fill",
+        source: "openmaptiles"
+      },
+      {
+        id: "poi_r1",
+        type: "symbol",
+        paint: { "text-color": "#111" },
+        layout: { "icon-size": 1 }
+      }
+    ]
+  };
+}
+
+function stubFetchOk(body: unknown): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(body)
+      })
+    )
+  );
+}
+
+function stubFetchFail(status: number): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.resolve({ ok: false, status }))
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// ---------------------------------------------------------------------------
+// selectFillOpacity
+// ---------------------------------------------------------------------------
+
 describe("selectFillOpacity", () => {
-  it("returns water-specific stops for 'water' layer", () => {
+  it("returns water-specific stops for the 'water' layer", () => {
     const result = selectFillOpacity("water");
     expect(result).toEqual([
       "interpolate",
@@ -26,7 +140,7 @@ describe("selectFillOpacity", () => {
   });
 
   it("returns default stops for non-water layers", () => {
-    const result = selectFillOpacity("landuse");
+    const result = selectFillOpacity("landcover");
     expect(result).toEqual([
       "interpolate",
       ["linear"],
@@ -39,11 +153,21 @@ describe("selectFillOpacity", () => {
       0.02
     ]);
   });
+
+  it("returns the default branch for an arbitrary layer id", () => {
+    const result = selectFillOpacity("unknown_xyz");
+    expect(Array.isArray(result)).toBe(true);
+    expect((result as unknown[])[4]).toBe(0.08);
+  });
 });
 
+// ---------------------------------------------------------------------------
+// selectRoadOpacity
+// ---------------------------------------------------------------------------
+
 describe("selectRoadOpacity", () => {
-  it("returns casing stops for road casing layers", () => {
-    const result = selectRoadOpacity("road_casing");
+  it("returns casing-specific stops for ids containing 'casing'", () => {
+    const result = selectRoadOpacity("road_primary_casing");
     expect(result).toEqual([
       "interpolate",
       ["linear"],
@@ -57,8 +181,8 @@ describe("selectRoadOpacity", () => {
     ]);
   });
 
-  it("returns default stops for non-casing road layers", () => {
-    const result = selectRoadOpacity("road_fill");
+  it("returns default road stops for non-casing roads", () => {
+    const result = selectRoadOpacity("road_primary");
     expect(result).toEqual([
       "interpolate",
       ["linear"],
@@ -71,208 +195,298 @@ describe("selectRoadOpacity", () => {
       0.72
     ]);
   });
+
+  it("differentiates casing from non-casing at the same zoom stops", () => {
+    const casing = selectRoadOpacity("road_casing") as unknown[];
+    const normal = selectRoadOpacity("road_fill") as unknown[];
+    expect(casing[casing.length - 1]).not.toBe(normal[normal.length - 1]);
+  });
 });
 
-function createFakeBaseStyle() {
-  return {
-    version: 8,
-    sources: {
-      openmaptiles: { type: "vector", url: "https://example.com" }
-    },
-    layers: [
-      { id: "background", type: "background", paint: { "background-color": "#fff" } },
-      { id: "natural_earth", type: "raster", paint: { "raster-opacity": 1 } },
-      { id: "water", type: "fill", paint: { "fill-color": "blue" } },
-      { id: "landuse", type: "fill", paint: { "fill-color": "green" } },
-      { id: BUILDING_LAYER_ID, type: "fill-extrusion", paint: { "fill-extrusion-color": "#ccc" } },
-      { id: FLAT_BUILDING_LAYER_ID, type: "fill", paint: { "fill-color": "#ddd" } },
-      { id: "label_city", type: "symbol", paint: { "text-color": "black" }, layout: { "text-field": "{name}" } },
-      { id: "road_primary", type: "line", paint: { "line-color": "#333" } },
-      { id: "road_primary_casing", type: "line", paint: { "line-color": "#333" } },
-      { id: "road_area_pattern", type: "fill", paint: {} },
-      { id: "other_line", type: "line", paint: { "line-color": "#000" } }
-    ]
-  };
-}
+// ---------------------------------------------------------------------------
+// Exported constants
+// ---------------------------------------------------------------------------
 
-function createDemSource(): DemSourceLike {
-  return {
-    sharedDemProtocolUrl: "protocol://dem/{z}/{x}/{y}",
-    contourProtocolUrl: () => "protocol://contour/{z}/{x}/{y}"
-  };
-}
+describe("exported constants", () => {
+  it("defines the 3d building layer id", () => {
+    expect(BUILDING_LAYER_ID).toBe("building-3d");
+  });
 
-const defaultConfig: StyleBuildConfig = {
-  reliefEnabled: true,
-  terrainExaggeration: 1.5
-};
+  it("defines the flat building layer id", () => {
+    expect(FLAT_BUILDING_LAYER_ID).toBe("building");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildMapStyle
+// ---------------------------------------------------------------------------
 
 describe("buildMapStyle", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  it("throws when the style fetch fails", async () => {
+    stubFetchFail(503);
+    await expect(buildMapStyle(makeDemSource(), makeConfig())).rejects.toThrow(
+      "Style request failed with 503."
+    );
   });
 
-  it("fetches the base style and produces a complete styled map", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-
-    expect(result).toBeDefined();
-    expect((result as any).projection).toEqual({ type: "globe" });
-    expect((result as any).terrain.exaggeration).toBe(1.5);
-    expect((result as any).sources.satellite).toBeDefined();
+  it("fetches the OpenFreeMap style URL", async () => {
+    stubFetchOk(fakeBaseStyle());
+    await buildMapStyle(makeDemSource(), makeConfig());
+    expect(fetch).toHaveBeenCalledWith("https://tiles.openfreemap.org/styles/liberty");
   });
 
-  it("throws on non-ok response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({ ok: false, status: 503 }))
-    );
-
-    await expect(buildMapStyle(createDemSource(), defaultConfig)).rejects.toThrow("503");
+  it("returns a style with globe projection", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    expect(style.projection).toEqual({ type: "globe" });
   });
 
-  it("transforms background to dark color", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const bg = (result as any).layers.find((l: any) => l.id === "background");
-    expect(bg.paint["background-color"]).toBe("#050b14");
+  it("includes terrain with the configured exaggeration", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(
+      makeDemSource(),
+      makeConfig({ terrainExaggeration: 1.8 })
+    )) as any;
+    expect(style.terrain.source).toBe("terrain-mesh");
+    expect(style.terrain.exaggeration).toBe(1.8);
   });
 
-  it("applies natural_earth raster opacity stops", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const ne = (result as any).layers.find((l: any) => l.id === "natural_earth");
-    expect(ne.paint["raster-opacity"]).toBeInstanceOf(Array);
+  it("adds satellite, terrain-mesh, relief-dem, and contour sources", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    expect(style.sources.satellite).toBeDefined();
+    expect(style.sources.satellite.type).toBe("raster");
+    expect(style.sources["terrain-mesh"]).toBeDefined();
+    expect(style.sources["terrain-mesh"].type).toBe("raster-dem");
+    expect(style.sources["terrain-relief-dem"]).toBeDefined();
+    expect(style.sources["terrain-contours"]).toBeDefined();
+    expect(style.sources["terrain-contours"].type).toBe("vector");
   });
 
-  it("applies fill opacity to fill layers except flat building", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const water = (result as any).layers.find((l: any) => l.id === "water");
-    expect(water.paint["fill-opacity"]).toBeInstanceOf(Array);
-
-    const flat = (result as any).layers.find((l: any) => l.id === FLAT_BUILDING_LAYER_ID);
-    expect(flat.paint["fill-opacity"]).toBeInstanceOf(Array);
+  it("preserves the original base sources", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    expect(style.sources.openmaptiles).toBeDefined();
   });
 
-  it("applies building 3d paint properties", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
+  it("calls contourProtocolUrl with the expected thresholds config", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const demSource = makeDemSource();
+    await buildMapStyle(demSource, makeConfig());
+    expect(demSource.contourProtocolUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contourLayer: "contours",
+        elevationKey: "ele",
+        levelKey: "level"
+      })
     );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const building = (result as any).layers.find((l: any) => l.id === BUILDING_LAYER_ID);
-    expect(building.paint["fill-extrusion-opacity"]).toBe(0.86);
-    expect(building.paint["fill-extrusion-color"]).toBeInstanceOf(Array);
   });
 
-  it("styles label layers with dark halo", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const label = (result as any).layers.find((l: any) => l.id === "label_city");
-    expect(label.paint["text-halo-color"]).toContain("rgba");
-    expect(label.paint["text-color"]).toBe("#f7fafc");
+  it("inserts satellite-imagery as the second layer (after background)", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    expect(style.layers[0].id).toBe("background");
+    expect(style.layers[1].id).toBe("satellite-imagery");
+    expect(style.layers[1].type).toBe("raster");
   });
 
-  it("applies road opacity to road_ line layers", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const road = (result as any).layers.find((l: any) => l.id === "road_primary");
-    expect(road.paint["line-opacity"]).toBeInstanceOf(Array);
+  it("inserts terrain-hillshade right after satellite-imagery", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    expect(style.layers[2].id).toBe("terrain-hillshade");
+    expect(style.layers[2].type).toBe("hillshade");
   });
 
   it("inserts contour layers before road_area_pattern", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const layerIds = (result as any).layers.map((l: any) => l.id);
-    const contourIdx = layerIds.indexOf("terrain-contours-line");
-    const roadAreaIdx = layerIds.indexOf("road_area_pattern");
-    expect(contourIdx).toBeLessThan(roadAreaIdx);
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const ids = style.layers.map((l: any) => l.id) as string[];
+    const contourLineIdx = ids.indexOf("terrain-contours-line");
+    const contourLabelIdx = ids.indexOf("terrain-contours-label");
+    const roadAreaIdx = ids.indexOf("road_area_pattern");
+    expect(contourLineIdx).toBeGreaterThan(-1);
+    expect(contourLabelIdx).toBe(contourLineIdx + 1);
+    expect(roadAreaIdx).toBe(contourLabelIdx + 1);
   });
 
   it("appends contour layers when road_area_pattern is absent", async () => {
-    const style = createFakeBaseStyle();
-    style.layers = style.layers.filter((l) => l.id !== "road_area_pattern");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => style
-      }))
-    );
-
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const layerIds = (result as any).layers.map((l: any) => l.id);
-    expect(layerIds.at(-1)).toBe("terrain-contours-label");
-    expect(layerIds.at(-2)).toBe("terrain-contours-line");
+    const base = fakeBaseStyle();
+    base.layers = base.layers.filter((l) => l.id !== "road_area_pattern");
+    stubFetchOk(base);
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const ids = style.layers.map((l: any) => l.id) as string[];
+    expect(ids[ids.length - 2]).toBe("terrain-contours-line");
+    expect(ids[ids.length - 1]).toBe("terrain-contours-label");
   });
 
-  it("inserts satellite and hillshade after background", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => createFakeBaseStyle()
-      }))
-    );
+  it("overrides background paint to dark color", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const bg = style.layers.find((l: any) => l.id === "background");
+    expect(bg.paint["background-color"]).toBe("#050b14");
+  });
 
-    const result = await buildMapStyle(createDemSource(), defaultConfig);
-    const layerIds = (result as any).layers.map((l: any) => l.id);
-    expect(layerIds[0]).toBe("background");
-    expect(layerIds[1]).toBe("satellite-imagery");
-    expect(layerIds[2]).toBe("terrain-hillshade");
+  it("applies raster-opacity ramp to natural_earth layer", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const ne = style.layers.find((l: any) => l.id === "natural_earth");
+    expect(ne.paint["raster-opacity"]).toEqual([
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      0,
+      0.12,
+      4,
+      0.06,
+      6,
+      0
+    ]);
+  });
+
+  it("applies fill-opacity to fill layers except flat building", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const water = style.layers.find((l: any) => l.id === "water");
+    expect(water.paint["fill-opacity"]).toBeDefined();
+    const landcover = style.layers.find((l: any) => l.id === "landcover");
+    expect(landcover.paint["fill-opacity"]).toBeDefined();
+  });
+
+  it("gives the flat building layer its own opacity ramp, not the generic one", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const flat = style.layers.find((l: any) => l.id === FLAT_BUILDING_LAYER_ID);
+    const arr = flat.paint["fill-opacity"] as unknown[];
+    expect(arr).toEqual([
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      13,
+      0.18,
+      14,
+      0.3
+    ]);
+  });
+
+  it("sets fill-outline-color on flat building layer", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const flat = style.layers.find((l: any) => l.id === FLAT_BUILDING_LAYER_ID);
+    expect(flat.paint["fill-outline-color"]).toBe("rgba(255,255,255,0.18)");
+  });
+
+  it("customizes 3d building extrusion colors and opacity", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const b3d = style.layers.find((l: any) => l.id === BUILDING_LAYER_ID);
+    expect(b3d.paint["fill-extrusion-opacity"]).toBe(0.86);
+    expect(Array.isArray(b3d.paint["fill-extrusion-color"])).toBe(true);
+    expect(b3d.paint["fill-extrusion-color"][0]).toBe("interpolate");
+  });
+
+  it("applies dark-mode halo to label layers", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const labelCity = style.layers.find((l: any) => l.id === "label_city");
+    expect(labelCity.paint["text-halo-color"]).toBe("rgba(13, 17, 24, 0.88)");
+    expect(labelCity.paint["text-halo-width"]).toBe(1.2);
+    expect(labelCity.paint["text-color"]).toBe("#f7fafc");
+  });
+
+  it("applies dark-mode halo to poi label layers", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const poi = style.layers.find((l: any) => l.id === "poi_r1");
+    expect(poi.paint["text-halo-color"]).toBe("rgba(13, 17, 24, 0.88)");
+    expect(poi.paint["text-color"]).toBe("#f7fafc");
+  });
+
+  it("applies road opacity to road line layers", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const road = style.layers.find((l: any) => l.id === "road_primary");
+    expect(road.paint["line-opacity"]).toBeDefined();
+    const casing = style.layers.find((l: any) => l.id === "road_primary_casing");
+    expect(casing.paint["line-opacity"]).toBeDefined();
+  });
+
+  it("does not mutate the original base style object", async () => {
+    const base = fakeBaseStyle();
+    const origBgColor = base.layers[0].paint!["background-color"];
+    stubFetchOk(base);
+    await buildMapStyle(makeDemSource(), makeConfig());
+    expect(base.layers[0].paint!["background-color"]).toBe(origBgColor);
+  });
+
+  it("handles layers without paint or layout gracefully", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const noPaint = style.layers.find((l: any) => l.id === "some_no_paint_layer");
+    expect(noPaint).toBeDefined();
+    expect(noPaint.source).toBe("openmaptiles");
+  });
+
+  it("preserves layout properties when cloning layers", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const b3d = style.layers.find((l: any) => l.id === BUILDING_LAYER_ID);
+    expect(b3d.layout.visibility).toBe("visible");
+    const poi = style.layers.find((l: any) => l.id === "poi_r1");
+    expect(poi.layout["icon-size"]).toBe(1);
+  });
+
+  it("uses reliefEnabled for satellite opacity calculation", async () => {
+    stubFetchOk(fakeBaseStyle());
+    const style = (await buildMapStyle(
+      makeDemSource(),
+      makeConfig({ reliefEnabled: false })
+    )) as any;
+    const sat = style.layers.find((l: any) => l.id === "satellite-imagery");
+    expect(sat.paint["raster-opacity"]).toBeDefined();
+  });
+
+  it("does not apply road opacity to non-road line layers", async () => {
+    const base = fakeBaseStyle();
+    base.layers.push({
+      id: "boundary_line",
+      type: "line",
+      paint: { "line-color": "#999" }
+    });
+    stubFetchOk(base);
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const boundary = style.layers.find((l: any) => l.id === "boundary_line");
+    expect(boundary.paint["line-opacity"]).toBeUndefined();
+  });
+
+  it("does not apply label halo to non-label symbol layers", async () => {
+    const base = fakeBaseStyle();
+    base.layers.push({
+      id: "custom_symbol",
+      type: "symbol",
+      paint: { "text-color": "#aaa" }
+    });
+    stubFetchOk(base);
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const custom = style.layers.find((l: any) => l.id === "custom_symbol");
+    expect(custom.paint["text-halo-color"]).toBeUndefined();
+  });
+
+  it("applies background paint even when paint was initially missing", async () => {
+    const base = fakeBaseStyle();
+    base.layers[0] = { id: "background", type: "background" } as any;
+    stubFetchOk(base);
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const bg = style.layers.find((l: any) => l.id === "background");
+    expect(bg.paint["background-color"]).toBe("#050b14");
+  });
+
+  it("skips natural_earth raster-opacity when paint is missing", async () => {
+    const base = fakeBaseStyle();
+    const ne = base.layers.find((l) => l.id === "natural_earth")!;
+    delete (ne as any).paint;
+    stubFetchOk(base);
+    const style = (await buildMapStyle(makeDemSource(), makeConfig())) as any;
+    const neResult = style.layers.find((l: any) => l.id === "natural_earth");
+    expect(neResult.paint).toBeUndefined();
   });
 });
