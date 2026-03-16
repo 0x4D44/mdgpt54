@@ -71,7 +71,7 @@ export function createTrafficRelayApp(options: TrafficRelayAppOptions = {}): Tra
   const shipsApiKey = options.shipsApiKey ?? AISSTREAM_API_KEY;
   const shipFeedUrl = options.shipFeedUrl ?? AISSTREAM_URL;
   const createShipSocket = options.createShipSocket ?? ((url: string) => new WebSocket(url));
-  const log = options.log ?? console;
+  const log = options.log ?? createRelayLogger();
   const relay =
     options.relay ??
     new TrafficRelayCore<RelayClientSocket>({
@@ -264,7 +264,7 @@ export function startTrafficRelayServer(
   options: TrafficRelayAppOptions = {},
 ): TrafficRelayServer {
   const app = createTrafficRelayApp(options);
-  const log = options.log ?? console;
+  const log = options.log ?? createRelayLogger();
   const httpServer = createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       const body = JSON.stringify(app.getHealthStatus());
