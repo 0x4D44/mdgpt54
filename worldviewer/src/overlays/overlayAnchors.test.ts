@@ -103,4 +103,22 @@ describe("overlayAnchors", () => {
 
     expect(findFirstNonBaseContentLayerId(layers)).toBeUndefined();
   });
+
+  it("detects satellite imagery layers by id pattern when source is not satellite", () => {
+    const layers = [
+      makeLayer("background", "background"),
+      makeLayer("custom-satellite-tiles", "raster", { source: "mapbox-tiles" })
+    ];
+
+    expect(findSatelliteImageryLayerId(layers)).toBe("custom-satellite-tiles");
+  });
+
+  it("matches label layers by id pattern without a text-field layout", () => {
+    const layers = [
+      makeLayer("landcover", "fill"),
+      makeLayer("my-place-names", "symbol")
+    ];
+
+    expect(findFirstLabelLayerId(layers)).toBe("my-place-names");
+  });
 });

@@ -290,7 +290,7 @@ export function createWeatherRadarOverlay(options: WeatherRadarOverlayOptions = 
   };
 
   const enable = (map: Map) => {
-    const reassertCurrentMap = enabled && currentMap === map && needsReassertion(map);
+    const reassertCurrentMap = enabled && currentMap === map && currentTileUrl !== null && needsReassertion(map);
 
     if (enabled && currentMap === map && !reassertCurrentMap) {
       return;

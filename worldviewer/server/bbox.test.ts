@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bboxUnion, bboxArea, pointInBbox } from "./bbox";
-import type { Bbox } from "./trafficModel";
+import type { Bbox } from "../src/traffic/trafficTypes";
 
 describe("bboxUnion", () => {
   it("returns null for an empty list", () => {
@@ -22,6 +22,12 @@ describe("bboxUnion", () => {
     const a: Bbox = [0, 0, 1, 1];
     const b: Bbox = [10, 10, 11, 11];
     expect(bboxUnion([a, b])).toEqual([0, 0, 11, 11]);
+  });
+
+  it("keeps the first bbox bounds when the second is fully contained", () => {
+    const outer: Bbox = [-10, -10, 10, 10];
+    const inner: Bbox = [-1, -1, 1, 1];
+    expect(bboxUnion([outer, inner])).toEqual([-10, -10, 10, 10]);
   });
 });
 

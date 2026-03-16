@@ -539,4 +539,119 @@ describe("weatherRadar", () => {
     expect(map.addSource).toHaveBeenCalledTimes(1);
     expect(map.addLayer).toHaveBeenCalledTimes(1);
   });
+
+  it("does not re-emit onStateChange when publish is called with the same presentation", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: {
+          past: [{ time: 1_763_000_000, path: "/v2/radar/1" }]
+        }
+      })
+    );
+    const onStateChange = vi.fn();
+    const map = new MockMap();
+    const overlay = createWeatherRadarOverlay({
+      fetchImpl,
+      updateIntervalMs: 5,
+      onStateChange
+    });
+
+    overlay.enable(map as never);
+    await flushAsyncWork();
+
+    const callCount = onStateChange.mock.calls.length;
+
+    // Second refresh returns the exact same frame — publish should deduplicate
+    await vi.advanceTimersByTimeAsync(5);
+    await flushAsyncWork();
+
+    expect(onStateChange).toHaveBeenCalledTimes(callCount);
+  });
+
+  it("clears currentTileUrl when removeOverlay is called on stale response", async () => {
+    const responses = [
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: {
+          past: [{ time: 1_763_000_000, path: "/v2/radar/1" }]
+        }
+      }),
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: { past: [] }
+      })
+    ];
+    const fetchImpl = vi.fn(async () => responses.shift()!);
+    const map = new MockMap();
+    const overlay = createWeatherRadarOverlay({
+      fetchImpl,
+      updateIntervalMs: 5
+    });
+
+    overlay.enable(map as never);
+    await flushAsyncWork();
+
+    expect(map.getSource(WEATHER_RADAR_SOURCE_ID)).toBeTruthy();
+
+    // Second refresh returns empty frames → triggers removeOverlay
+    await vi.advanceTimersByTimeAsync(5);
+    await flushAsyncWork();
+
+    expect(map.getSource(WEATHER_RADAR_SOURCE_ID)).toBeUndefined();
+    expect(map.getLayer(WEATHER_RADAR_LAYER_ID)).toBeUndefined();
+  });
+
+  it("removes overlay from old map when enabling on a different map", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        host: "https://tilecache.rainviewer.com",
+        radar: {
+          past: [{ time: 1_763_000_000, path: "/v2/radar/1" }]
+        }
+      })
+    );
+    const map1 = new MockMap();
+    const map2 = new MockMap();
+    const overlay = createWeatherRadarOverlay({ fetchImpl });
+
+    overlay.enable(map1 as never);
+    await flushAsyncWork();
+
+    expect(map1.getSource(WEATHER_RADAR_SOURCE_ID)).toBeTruthy();
+
+    // Enabling on a different map should clean up the old map
+    overlay.enable(map2 as never);
+    await flushAsyncWork();
+
+    expect(map1.getSource(WEATHER_RADAR_SOURCE_ID)).toBeUndefined();
+    expect(map1.getLayer(WEATHER_RADAR_LAYER_ID)).toBeUndefined();
+    expect(map2.getSource(WEATHER_RADAR_SOURCE_ID)).toBeTruthy();
+  });
+
+  it("prepends a leading slash to RainViewer paths that lack one", () => {
+    const tileUrl = buildWeatherRadarTileUrl(
+      "https://tilecache.rainviewer.com",
+      "v2/radar/1"
+    );
+
+    expect(tileUrl).toBe(
+      "https://tilecache.rainviewer.com/v2/radar/1/512/{z}/{x}/{y}/2/1_0.png"
+    );
+  });
+
+  it("treats whitespace-only host as unavailable metadata", () => {
+    expect(
+      parseLatestWeatherRadarFrame({
+        host: "   ",
+        radar: {
+          past: [{ time: 1_763_000_000, path: "/v2/radar/1" }]
+        }
+      })
+    ).toBeNull();
+  });
+
+  it("throws when buildWeatherRadarTileUrl receives an empty host", () => {
+    expect(() => buildWeatherRadarTileUrl("  ", "/v2/radar/1")).toThrow();
+  });
 });

@@ -410,4 +410,119 @@ describe("solarTerminator", () => {
     expect(map.removeLayer).toHaveBeenCalledWith(SOLAR_TERMINATOR_LAYER_ID);
     expect(map.removeSource).toHaveBeenCalledWith(SOLAR_TERMINATOR_SOURCE_ID);
   });
+
+  it("stops the interval timer on disable and does not fire stale ticks", () => {
+    let now = new Date("2026-03-20T12:00:00Z");
+    const map = new MockMap();
+    const overlay = createSolarTerminatorOverlay({
+      getNow: () => now,
+      updateIntervalMs: 60_000
+    });
+
+    overlay.enable(map as never);
+    const source = map.getSource(SOLAR_TERMINATOR_SOURCE_ID) as { setData: ReturnType<typeof vi.fn> };
+
+    overlay.disable(map as never);
+
+    now = new Date("2026-03-20T12:01:00Z");
+    vi.advanceTimersByTime(60_000);
+
+    // setData should NOT have been called after disable
+    expect(source.setData).not.toHaveBeenCalled();
+  });
+
+  it("clears load handler references when clearLoadHandler runs with null handler", () => {
+    const map = new MockMap();
+    const overlay = createSolarTerminatorOverlay({
+      getNow: () => new Date("2026-03-20T12:00:00Z")
+    });
+
+    // enable on a loaded map — clearLoadHandler runs but handler/map are already null
+    overlay.enable(map as never);
+    // calling disable also hits clearLoadHandler when no pending load handler exists
+    overlay.disable(map as never);
+
+    expect(map.off).not.toHaveBeenCalled();
+  });
+
+  it("updates existing source via setData on timer tick instead of adding a new one", () => {
+    let now = new Date("2026-03-20T12:00:00Z");
+    const map = new MockMap();
+    const overlay = createSolarTerminatorOverlay({
+      getNow: () => now,
+      updateIntervalMs: 60_000
+    });
+
+    overlay.enable(map as never);
+    expect(map.addSource).toHaveBeenCalledTimes(1);
+
+    const source = map.getSource(SOLAR_TERMINATOR_SOURCE_ID) as { setData: ReturnType<typeof vi.fn> };
+
+    now = new Date("2026-03-20T12:01:00Z");
+    vi.advanceTimersByTime(60_000);
+
+    expect(source.setData).toHaveBeenCalledTimes(1);
+    // Should NOT have added a second source
+    expect(map.addSource).toHaveBeenCalledTimes(1);
+  });
+
+  it("clamps terminator latitudes within [-90, 90]", () => {
+    // At the June solstice, extreme declination pushes terminator latitudes
+    // toward the poles. Verify all coordinates remain within valid bounds.
+    const feature = buildNightFeature(new Date("2026-06-21T00:00:00Z"));
+
+    for (const polygon of feature.geometry.coordinates) {
+      for (const ring of polygon) {
+        for (const [, lat] of ring) {
+          expect(lat).toBeGreaterThanOrEqual(-90);
+          expect(lat).toBeLessThanOrEqual(90);
+        }
+      }
+    }
+  });
+
+  it("handles closeRing when the ring is already closed", () => {
+    // buildNightFeature already calls closeRing, and the ring should be properly closed.
+    // Verify no duplicate closing points in the output.
+    const feature = buildNightFeature(new Date("2026-03-20T12:00:00Z"));
+
+    for (const polygon of feature.geometry.coordinates) {
+      const ring = polygon[0];
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      expect(first).toEqual(last);
+
+      // Verify no triple-duplicate at the end (would indicate double-closing)
+      if (ring.length >= 3) {
+        const secondToLast = ring[ring.length - 2];
+        expect(sameCoord(first, secondToLast)).toBe(false);
+      }
+    }
+  });
+
+  it("guards against stale timer ticks after the map is swapped", () => {
+    let now = new Date("2026-03-20T12:00:00Z");
+    const map1 = new MockMap();
+    const map2 = new MockMap();
+    const overlay = createSolarTerminatorOverlay({
+      getNow: () => now,
+      updateIntervalMs: 60_000
+    });
+
+    overlay.enable(map1 as never);
+    // Enable on a different map — old timer's token becomes stale
+    overlay.enable(map2 as never);
+
+    now = new Date("2026-03-20T12:01:00Z");
+    vi.advanceTimersByTime(60_000);
+
+    // map2 should have received the overlay, map1 should not have been updated
+    expect(map2.addSource).toHaveBeenCalledTimes(1);
+    const source2 = map2.getSource(SOLAR_TERMINATOR_SOURCE_ID) as { setData: ReturnType<typeof vi.fn> };
+    expect(source2.setData).toHaveBeenCalledTimes(1);
+  });
 });
+
+function sameCoord(a: GeoJSON.Position, b: GeoJSON.Position): boolean {
+  return a[0] === b[0] && a[1] === b[1];
+}

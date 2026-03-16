@@ -25,6 +25,17 @@ describe("parseAircraftDatabaseCsvLine", () => {
       "owner's special"
     ]);
   });
+
+  it("handles double-quoted fields the same as single-quoted fields", () => {
+    expect(parseAircraftDatabaseCsvLine('"abc123","Boeing, Inc."')).toEqual([
+      "abc123",
+      "Boeing, Inc."
+    ]);
+  });
+
+  it("strips carriage return characters from lines", () => {
+    expect(parseAircraftDatabaseCsvLine("abc123,B738\r")).toEqual(["abc123", "B738"]);
+  });
 });
 
 describe("extractAircraftIdentityEntry", () => {
@@ -87,6 +98,15 @@ describe("parseAircraftIdentityShard", () => {
       }
     });
   });
+
+  it("returns an empty record for non-object input", () => {
+    expect(parseAircraftIdentityShard(null)).toEqual({});
+    expect(parseAircraftIdentityShard("not-an-object")).toEqual({});
+  });
+
+  it("skips tuples where all identity fields are empty", () => {
+    expect(parseAircraftIdentityShard({ abc123: ["", "", "", ""] })).toEqual({});
+  });
 });
 
 describe("deriveRenderModelKey", () => {
@@ -95,6 +115,11 @@ describe("deriveRenderModelKey", () => {
     expect(deriveRenderModelKey("A20N")).toBe("airbus-a320-family");
     expect(deriveRenderModelKey("B77W")).toBe("boeing-777-family");
     expect(deriveRenderModelKey("DH8D")).toBeNull();
+  });
+
+  it("returns null for null or undefined type codes", () => {
+    expect(deriveRenderModelKey(null)).toBeNull();
+    expect(deriveRenderModelKey(undefined)).toBeNull();
   });
 });
 

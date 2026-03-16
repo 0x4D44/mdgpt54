@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   formatShardSizeLine,
   generateAircraftIdentity,
+  isAircraftIdentityGeneratorEntrypoint,
   parseGeneratorArgs
 } from "./generateAircraftIdentity";
 
@@ -52,6 +53,33 @@ describe("generateAircraftIdentity", () => {
     await expect(access(join(outputDir, "stale.json"))).rejects.toThrow();
   });
 
+  it("accepts output directory paths with trailing slashes", async () => {
+    const root = await makeTempRoot();
+    const inputPath = join(root, "aircraft.csv");
+    const outputDir = join(root, "aircraft-identity") + "/";
+
+    await writeFile(inputPath, "icao24,registration,typecode,manufacturername,model\n", "utf8");
+
+    const summaries = await generateAircraftIdentity({ inputPath, outputDir });
+    expect(summaries).toHaveLength(256);
+  });
+
+  it("preserves non-JSON files and directories during shard pruning", async () => {
+    const root = await makeTempRoot();
+    const inputPath = join(root, "aircraft.csv");
+    const outputDir = join(root, "aircraft-identity");
+
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(inputPath, "icao24,registration,typecode,manufacturername,model\n", "utf8");
+    await writeFile(join(outputDir, "readme.txt"), "keep me", "utf8");
+    await mkdir(join(outputDir, "subdir"), { recursive: true });
+
+    await generateAircraftIdentity({ inputPath, outputDir });
+
+    await expect(access(join(outputDir, "readme.txt"))).resolves.toBeUndefined();
+    await expect(access(join(outputDir, "subdir"))).resolves.toBeUndefined();
+  });
+
   it("rejects output directories that are not explicitly aircraft-identity", async () => {
     const root = await makeTempRoot();
     const inputPath = join(root, "aircraft.csv");
@@ -86,6 +114,28 @@ describe("parseGeneratorArgs", () => {
       outputDir: "public/aircraft-identity"
     });
   });
+
+  it("accepts short flags -i and -o", () => {
+    expect(parseGeneratorArgs(["-i", "data/db.csv", "-o", "out/aircraft-identity"])).toEqual({
+      inputPath: "data/db.csv",
+      outputDir: "out/aircraft-identity"
+    });
+  });
+
+  it("throws when no input path is provided", () => {
+    expect(() => parseGeneratorArgs([])).toThrow("Missing input CSV path");
+  });
+
+  it("throws when only flags are provided without values", () => {
+    expect(() => parseGeneratorArgs(["--output", "out/aircraft-identity"])).toThrow("Missing input CSV path");
+  });
+
+  it("ignores unrecognized flags", () => {
+    expect(parseGeneratorArgs(["--verbose", "--input", "db.csv"])).toEqual({
+      inputPath: "db.csv",
+      outputDir: "public/aircraft-identity"
+    });
+  });
 });
 
 describe("formatShardSizeLine", () => {
@@ -98,5 +148,79 @@ describe("formatShardSizeLine", () => {
         gzipBytes: 2 * 1024 * 1024
       })
     ).toContain("[warning]");
+  });
+
+  it("omits warning for shards within size limits", () => {
+    const line = formatShardSizeLine({
+      prefix: "0a",
+      entries: 42,
+      rawBytes: 512,
+      gzipBytes: 200
+    });
+    expect(line).not.toContain("[warning]");
+    expect(line).toContain("0a.json");
+    expect(line).toContain("42 entries");
+    expect(line).toContain("512 B raw");
+    expect(line).toContain("200 B gzip");
+  });
+
+  it("formats KiB-range byte sizes", () => {
+    const line = formatShardSizeLine({
+      prefix: "ff",
+      entries: 100,
+      rawBytes: 150 * 1024,
+      gzipBytes: 50 * 1024
+    });
+    expect(line).toContain("150.0 KiB raw");
+    expect(line).toContain("50.0 KiB gzip");
+  });
+
+  it("formats MiB-range byte sizes", () => {
+    const line = formatShardSizeLine({
+      prefix: "cd",
+      entries: 5000,
+      rawBytes: 3 * 1024 * 1024,
+      gzipBytes: 1024 * 1024
+    });
+    expect(line).toContain("3.00 MiB raw");
+    expect(line).toContain("1.00 MiB gzip");
+  });
+
+  it("warns when only raw bytes exceed the threshold", () => {
+    const line = formatShardSizeLine({
+      prefix: "aa",
+      entries: 100,
+      rawBytes: 6 * 1024 * 1024,
+      gzipBytes: 1024
+    });
+    expect(line).toContain("[warning]");
+  });
+
+  it("warns when only gzip bytes exceed the threshold", () => {
+    const line = formatShardSizeLine({
+      prefix: "bb",
+      entries: 100,
+      rawBytes: 1024,
+      gzipBytes: 2 * 1024 * 1024
+    });
+    expect(line).toContain("[warning]");
+  });
+});
+
+describe("isAircraftIdentityGeneratorEntrypoint", () => {
+  it("returns true for a .ts script path", () => {
+    expect(isAircraftIdentityGeneratorEntrypoint("scripts/generateAircraftIdentity.ts")).toBe(true);
+  });
+
+  it("returns true for a .js script path", () => {
+    expect(isAircraftIdentityGeneratorEntrypoint("dist/generateAircraftIdentity.js")).toBe(true);
+  });
+
+  it("returns false for an unrelated script", () => {
+    expect(isAircraftIdentityGeneratorEntrypoint("scripts/otherScript.ts")).toBe(false);
+  });
+
+  it("returns false for undefined", () => {
+    expect(isAircraftIdentityGeneratorEntrypoint(undefined)).toBe(false);
   });
 });

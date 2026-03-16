@@ -153,4 +153,33 @@ describe("parseOpenSkyStates", () => {
 
     expect(tracks).toEqual([]);
   });
+
+  it("skips non-array state entries", () => {
+    const tracks = parseOpenSkyStates({
+      states: ["not-an-array", null, 42]
+    });
+
+    expect(tracks).toEqual([]);
+  });
+
+  it("returns null callsign when the callsign field is not a string", () => {
+    const now = 1773360000000;
+    const tracks = parseOpenSkyStates(
+      {
+        states: [
+          [
+            "abc123", null, "Country", 1773360000, 1773360000,
+            -3.3, 55.9, 10000, false, 250.5, 45.2,
+            null, null, 10100, null, null, null, 6
+          ]
+        ]
+      },
+      now
+    );
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0].callsign).toBeNull();
+    expect(tracks[0].flightCode).toBeNull();
+    expect(tracks[0].label).toBeNull();
+  });
 });

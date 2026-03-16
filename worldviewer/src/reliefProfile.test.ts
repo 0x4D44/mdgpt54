@@ -77,4 +77,22 @@ describe("reliefProfile", () => {
     expect(getSatelliteOpacity(12.5, 74, true)).toBe(1);
     expect(getSatelliteOpacity(16, 72, true)).toBe(1);
   });
+
+  it("returns the first stop value when zoom is at or below the first stop", () => {
+    expect(getSatelliteOpacity(0, 0, false)).toBeCloseTo(0.92);
+  });
+
+  it("returns the last stop value when zoom exceeds the final stop", () => {
+    expect(getSatelliteOpacity(20, 0, false)).toBeCloseTo(0.76);
+  });
+
+  it("applies high-pitch and mid-zoom penalties to non-relief opacity", () => {
+    expect(getSatelliteOpacity(10, 75, false)).toBeCloseTo(0.605);
+  });
+
+  it("covers every terrain exaggeration zoom bracket", () => {
+    expect(getTerrainExaggeration(7)).toBe(1.45);
+    expect(getTerrainExaggeration(12.5)).toBe(2.05);
+    expect(getTerrainExaggeration(14.5)).toBe(1.65);
+  });
 });

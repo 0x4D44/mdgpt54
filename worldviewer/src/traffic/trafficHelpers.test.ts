@@ -271,6 +271,16 @@ describe("deriveFlightCode", () => {
     expect(deriveFlightCode("BAW12345")).toBeNull();
     expect(deriveFlightCode("BAW 123")).toBeNull();
   });
+
+  it("returns null for non-string inputs", () => {
+    expect(deriveFlightCode(null)).toBeNull();
+    expect(deriveFlightCode(undefined)).toBeNull();
+  });
+
+  it("returns null for empty or whitespace-only callsigns", () => {
+    expect(deriveFlightCode("")).toBeNull();
+    expect(deriveFlightCode("   ")).toBeNull();
+  });
 });
 
 describe("getAircraftVisualCategory", () => {
@@ -335,6 +345,38 @@ describe("buildAircraftPopupIdentity", () => {
     ).toEqual({
       title: "N123AB",
       rows: ["Registration G-ABCD", "Category Rotorcraft"]
+    });
+  });
+
+  it("falls back to the track id when all text fields are empty", () => {
+    expect(
+      buildAircraftPopupIdentity({
+        id: "abc123",
+        label: null,
+        callsign: null,
+        flightCode: null,
+        registration: null,
+        aircraftCategory: null
+      })
+    ).toEqual({
+      title: "abc123",
+      rows: []
+    });
+  });
+
+  it("uses raw id as fallback title when all identity fields are whitespace-only", () => {
+    expect(
+      buildAircraftPopupIdentity({
+        id: " ",
+        label: "  ",
+        callsign: "  ",
+        flightCode: "  ",
+        registration: "  ",
+        aircraftCategory: null
+      })
+    ).toEqual({
+      title: " ",
+      rows: []
     });
   });
 

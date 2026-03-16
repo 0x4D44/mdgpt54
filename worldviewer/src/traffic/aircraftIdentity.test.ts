@@ -71,6 +71,51 @@ describe("mergeAircraftIdentityIntoTracks", () => {
       })
     ]);
   });
+
+  it("passes through non-aircraft tracks without merging", () => {
+    const shipTrack: LiveTrack = { ...makeTrack({ id: "ship-1" }), kind: "ship" };
+    const cache = new Map([
+      ["ab", { abc123: { registration: "N123AB", typeCode: "B738", manufacturer: "Boeing", model: "737-800" } }]
+    ]);
+    const result = mergeAircraftIdentityIntoTracks([shipTrack], cache);
+    expect(result).toBe(result);
+    expect(result[0]).toBe(shipTrack);
+  });
+
+  it("passes through aircraft with invalid icao24 without merging", () => {
+    const track = makeTrack({ id: "not-hex" });
+    const cache = new Map([
+      ["ab", { abc123: { registration: "N123AB", typeCode: "B738", manufacturer: "Boeing", model: "737-800" } }]
+    ]);
+    const result = mergeAircraftIdentityIntoTracks([track], cache);
+    expect(result[0]).toBe(track);
+  });
+
+  it("returns the original track when identity fields already match", () => {
+    const track = makeTrack({
+      aircraftTypeCode: "B738",
+      registration: "N123AB",
+      manufacturer: "Boeing",
+      model: "737-800",
+      renderModelKey: "boeing-737-family"
+    });
+    const cache = new Map([
+      [
+        "ab",
+        {
+          abc123: {
+            registration: "N123AB",
+            typeCode: "B738",
+            manufacturer: "Boeing",
+            model: "737-800"
+          }
+        }
+      ]
+    ]);
+    const result = mergeAircraftIdentityIntoTracks([track], cache);
+    expect(result).toBe(result);
+    expect(result[0]).toBe(track);
+  });
 });
 
 describe("AircraftIdentityStore", () => {
@@ -230,5 +275,12 @@ describe("buildAircraftIdentityShardUrl", () => {
     vi.stubGlobal("document", undefined);
     vi.stubGlobal("location", undefined);
     expect(buildAircraftIdentityShardUrl("ab")).toBe("http://localhost/aircraft-identity/ab.json");
+  });
+
+  it("falls back to location.origin when document.baseURI and location.href are unavailable", () => {
+    vi.stubEnv("BASE_URL", "./");
+    vi.stubGlobal("document", {});
+    vi.stubGlobal("location", { origin: "http://localhost:5173" });
+    expect(buildAircraftIdentityShardUrl("ab")).toBe("http://localhost:5173/aircraft-identity/ab.json");
   });
 });

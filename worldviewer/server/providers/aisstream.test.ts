@@ -4,7 +4,7 @@ import {
   parsePositionReport,
   parseShipStaticData,
 } from "./aisstream";
-import type { Bbox } from "../trafficModel";
+import type { Bbox } from "../../src/traffic/trafficTypes";
 
 describe("bboxToAISStreamSubscription", () => {
   it("maps canonical bbox to AISStream subscription message", () => {
@@ -136,6 +136,55 @@ describe("parsePositionReport", () => {
     const track = parsePositionReport(msg);
     expect(track!.heading).toBe(118.3);
   });
+
+  it("returns null when Message exists but PositionReport key is absent", () => {
+    const msg = {
+      MessageType: "ShipStaticData",
+      MetaData: { MMSI: 211234567, ShipName: "TEST", time_utc: "" },
+      Message: {
+        ShipStaticData: { Name: "TEST" },
+      },
+    };
+    expect(parsePositionReport(msg)).toBeNull();
+  });
+
+  it("returns null speedKnots when Sog is not a number", () => {
+    const msg = {
+      MessageType: "PositionReport",
+      MetaData: { MMSI: 211234567, ShipName: "TEST", time_utc: "" },
+      Message: {
+        PositionReport: {
+          Longitude: -3.3,
+          Latitude: 55.9,
+          TrueHeading: 120,
+          Sog: undefined,
+          Cog: 118.3,
+          NavigationalStatus: 0,
+        },
+      },
+    };
+    const track = parsePositionReport(msg);
+    expect(track!.speedKnots).toBeNull();
+  });
+
+  it("returns null label when ShipName is empty or whitespace-only", () => {
+    const msg = {
+      MessageType: "PositionReport",
+      MetaData: { MMSI: 211234567, ShipName: "   ", time_utc: "" },
+      Message: {
+        PositionReport: {
+          Longitude: -3.3,
+          Latitude: 55.9,
+          TrueHeading: 120,
+          Sog: 5.0,
+          Cog: 118.3,
+          NavigationalStatus: 0,
+        },
+      },
+    };
+    const track = parsePositionReport(msg);
+    expect(track!.label).toBeNull();
+  });
 });
 
 describe("parseShipStaticData", () => {
@@ -169,5 +218,39 @@ describe("parseShipStaticData", () => {
     };
     const result = parseShipStaticData(msg);
     expect(result!.name).toBe("BLUE HORIZON");
+  });
+
+  it("falls back to MetaData.ShipName when ShipStaticData.Name is absent", () => {
+    const msg = {
+      MessageType: "ShipStaticData",
+      MetaData: { MMSI: 211234567, ShipName: "META NAME", time_utc: "" },
+      Message: {
+        ShipStaticData: { ImoNumber: 0, Type: 0 },
+      },
+    };
+    const result = parseShipStaticData(msg);
+    expect(result).toEqual({ mmsi: "211234567", name: "META NAME" });
+  });
+
+  it("returns null when MMSI is missing", () => {
+    const msg = {
+      MessageType: "ShipStaticData",
+      MetaData: { ShipName: "GHOST", time_utc: "" },
+      Message: {
+        ShipStaticData: { Name: "GHOST", ImoNumber: 0, Type: 0 },
+      },
+    };
+    expect(parseShipStaticData(msg)).toBeNull();
+  });
+
+  it("returns null when neither Name nor ShipName is present", () => {
+    const msg = {
+      MessageType: "ShipStaticData",
+      MetaData: { MMSI: 211234567, time_utc: "" },
+      Message: {
+        ShipStaticData: { ImoNumber: 0, Type: 0 },
+      },
+    };
+    expect(parseShipStaticData(msg)).toBeNull();
   });
 });
