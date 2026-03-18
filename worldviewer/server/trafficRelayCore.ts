@@ -6,9 +6,7 @@ import type {
   SnapshotStatus,
   SubscribeMessage,
   TrafficLayerStatus,
-} from "./trafficModel";
-
-type LayerName = keyof SubscribeMessage["layers"];
+} from "../src/traffic/trafficTypes";
 
 type RelayClientEntry = {
   request: SubscribeMessage | null;
@@ -24,16 +22,15 @@ export type ResolvedSubscription = {
 export type TrafficRelayCoreOptions = {
   maxBboxArea?: number;
   shipStaleMs?: number;
-  minOpenSkyPollMs?: number;
   shipsAvailable?: boolean;
   now?: () => number;
 };
 
 export const DEFAULT_MAX_BBOX_AREA = 2500;
 export const DEFAULT_SHIP_STALE_MS = 5 * 60_000;
-export const DEFAULT_MIN_OPENSKY_POLL_MS = 10_000;
 
-const AIRCRAFT_ZOOM_IN_MESSAGE = "Zoom in to request live aircraft for a smaller area.";
+const AIRCRAFT_UNAVAILABLE_MESSAGE =
+  "Aircraft traffic is browser-direct; the relay only serves ships.";
 const SHIPS_ZOOM_IN_MESSAGE = "Zoom in to request live ships for a smaller area.";
 const SHIPS_UNAVAILABLE_MESSAGE = "Ship traffic unavailable: relay is missing AISSTREAM_API_KEY.";
 
@@ -89,19 +86,15 @@ export class TrafficRelayCore<Id> {
   private readonly clients = new Map<Id, RelayClientEntry>();
   private readonly maxBboxArea: number;
   private readonly shipStaleMs: number;
-  private readonly minOpenSkyPollMs: number;
   private readonly shipsAvailable: boolean;
   private readonly now: () => number;
 
-  private aircraftTracks: LiveTrack[] = [];
   private readonly shipPositions = new Map<string, LiveTrack>();
   private readonly shipNames = new Map<string, string>();
-  private lastOpenSkyPollAt: number | null = null;
 
   constructor(options: TrafficRelayCoreOptions = {}) {
     this.maxBboxArea = options.maxBboxArea ?? DEFAULT_MAX_BBOX_AREA;
     this.shipStaleMs = options.shipStaleMs ?? DEFAULT_SHIP_STALE_MS;
-    this.minOpenSkyPollMs = options.minOpenSkyPollMs ?? DEFAULT_MIN_OPENSKY_POLL_MS;
     this.shipsAvailable = options.shipsAvailable ?? false;
     this.now = options.now ?? Date.now;
   }
@@ -140,44 +133,31 @@ export class TrafficRelayCore<Id> {
     this.expireStaleShips();
 
     const { bbox } = resolved.request;
-    const aircraft = resolved.acceptedLayers.aircraft
-      ? this.aircraftTracks.filter((track) => pointInBbox(track.lng, track.lat, bbox))
-      : [];
     const ships = resolved.acceptedLayers.ships
       ? [...this.shipPositions.values()].filter((track) => pointInBbox(track.lng, track.lat, bbox))
       : [];
 
     return {
       type: "snapshot",
-      aircraft,
+      aircraft: [],
       ships,
       serverTime: this.now(),
       status: resolved.status,
     };
   }
 
-  getActiveAircraftBbox(): Bbox | null {
-    return this.getActiveBbox("aircraft");
-  }
-
   getActiveShipBbox(): Bbox | null {
-    return this.getActiveBbox("ships");
-  }
-
-  hasActiveAircraftSubscriptions(): boolean {
-    return this.getActiveAircraftBbox() !== null;
+    const boxes: Bbox[] = [];
+    for (const entry of this.clients.values()) {
+      if (entry.resolved?.acceptedLayers.ships) {
+        boxes.push(entry.resolved.request.bbox);
+      }
+    }
+    return bboxUnion(boxes);
   }
 
   hasActiveShipSubscriptions(): boolean {
     return this.getActiveShipBbox() !== null;
-  }
-
-  setAircraftTracks(tracks: LiveTrack[]): void {
-    this.aircraftTracks = tracks;
-  }
-
-  clearAircraftTracks(): void {
-    this.aircraftTracks = [];
   }
 
   getShipTrackCount(): number {
@@ -214,31 +194,8 @@ export class TrafficRelayCore<Id> {
     }
   }
 
-  markOpenSkyPoll(now: number = this.now()): void {
-    this.lastOpenSkyPollAt = now;
-  }
-
-  getNextOpenSkyPollDelay(now: number = this.now()): number | null {
-    if (!this.hasActiveAircraftSubscriptions()) return null;
-    if (this.lastOpenSkyPollAt === null) return 0;
-    return Math.max(0, this.minOpenSkyPollMs - (now - this.lastOpenSkyPollAt));
-  }
-
-  private getActiveBbox(layer: LayerName): Bbox | null {
-    const boxes: Bbox[] = [];
-    for (const entry of this.clients.values()) {
-      if (entry.resolved?.acceptedLayers[layer]) {
-        boxes.push(entry.resolved.request.bbox);
-      }
-    }
-    return bboxUnion(boxes);
-  }
-
   private reconcile(): void {
-    const acceptedBoxes: Record<LayerName, Bbox[]> = {
-      aircraft: [],
-      ships: [],
-    };
+    const acceptedShipBoxes: Bbox[] = [];
 
     for (const entry of this.clients.values()) {
       if (!entry.request) {
@@ -247,29 +204,24 @@ export class TrafficRelayCore<Id> {
       }
 
       const status: SnapshotStatus = {
-        aircraft: okStatus(),
-        ships: this.shipsAvailable ? okStatus() : unavailableStatus(SHIPS_UNAVAILABLE_MESSAGE),
+        aircraft: entry.request.layers.aircraft
+          ? unavailableStatus(AIRCRAFT_UNAVAILABLE_MESSAGE)
+          : okStatus(),
+        ships:
+          entry.request.layers.ships && !this.shipsAvailable
+            ? unavailableStatus(SHIPS_UNAVAILABLE_MESSAGE)
+            : okStatus(),
       };
       const acceptedLayers = {
         aircraft: false,
         ships: false,
       };
 
-      if (entry.request.layers.aircraft) {
-        const nextUnion = bboxUnion([...acceptedBoxes.aircraft, entry.request.bbox]);
-        if (nextUnion !== null && bboxArea(nextUnion) <= this.maxBboxArea) {
-          acceptedLayers.aircraft = true;
-          acceptedBoxes.aircraft.push(entry.request.bbox);
-        } else {
-          status.aircraft = zoomInStatus(AIRCRAFT_ZOOM_IN_MESSAGE);
-        }
-      }
-
       if (entry.request.layers.ships && this.shipsAvailable) {
-        const nextUnion = bboxUnion([...acceptedBoxes.ships, entry.request.bbox]);
+        const nextUnion = bboxUnion([...acceptedShipBoxes, entry.request.bbox]);
         if (nextUnion !== null && bboxArea(nextUnion) <= this.maxBboxArea) {
           acceptedLayers.ships = true;
-          acceptedBoxes.ships.push(entry.request.bbox);
+          acceptedShipBoxes.push(entry.request.bbox);
         } else {
           status.ships = zoomInStatus(SHIPS_ZOOM_IN_MESSAGE);
         }
@@ -282,9 +234,6 @@ export class TrafficRelayCore<Id> {
       };
     }
 
-    if (!this.hasActiveAircraftSubscriptions()) {
-      this.clearAircraftTracks();
-    }
     if (!this.hasActiveShipSubscriptions()) {
       this.clearShipState();
     }

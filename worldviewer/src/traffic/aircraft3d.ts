@@ -1,4 +1,5 @@
 import { normalizeAircraftIdentityText, normalizeAircraftTypeCode } from "./aircraftIdentityData";
+import { AIRCRAFT_2D_SYMBOL_MAX_SIZE_PX } from "./aircraftIconSizing";
 import type { Bbox, LiveTrack } from "./trafficTypes";
 
 export type Aircraft3dClassKey =
@@ -36,12 +37,28 @@ type Aircraft3dView = {
   tracks: LiveTrack[];
 };
 
-const AIRCRAFT_3D_ON_ZOOM = 10.5;
-const AIRCRAFT_3D_OFF_ZOOM = 10;
+// Meter-true aircraft remain unreadably small at mid zooms, so keep the 2D symbols
+// until the camera is close enough for the 3D handoff to read clearly.
+const AIRCRAFT_3D_ON_ZOOM = 13.5;
+const AIRCRAFT_3D_OFF_ZOOM = 13;
 const AIRCRAFT_3D_ON_PITCH = 45;
 const AIRCRAFT_3D_OFF_PITCH = 35;
 const AIRCRAFT_3D_ON_COUNT = 24;
 const AIRCRAFT_3D_OFF_COUNT = 32;
+// Match the capped 2D aircraft symbol size so 3D never replaces it with a much
+// smaller meter-true mesh at handoff.
+const AIRCRAFT_3D_MIN_HANDOFF_SIZE_PX = AIRCRAFT_2D_SYMBOL_MAX_SIZE_PX;
+const WEB_MERCATOR_MAX_LATITUDE = 85.05112878;
+const WEB_MERCATOR_WORLD_SIZE_AT_ZOOM_0 = 512;
+const EARTH_CIRCUMFERENCE_METERS = 40_075_016.68557849;
+const AIRCRAFT_3D_CLASS_MAJOR_AXIS_METERS: Record<Aircraft3dClassKey, number> = {
+  "narrow-body": 38,
+  "wide-body": 60,
+  "regional-jet": 28,
+  bizjet: 20,
+  prop: 17,
+  helicopter: 16
+};
 
 const MODEL_KEY_CLASS_MAP: Record<string, Aircraft3dClassKey> = {
   "airbus-a320-family": "narrow-body",
@@ -154,6 +171,20 @@ export function buildRenderableAircraft3dTracks(
   return renderable;
 }
 
+export function filterAircraft3dHandoffTracks(
+  tracks: RenderableAircraft3dTrack[],
+  zoom: number
+): RenderableAircraft3dTrack[] {
+  return tracks.filter((track) => isAircraft3dHandoffTrack(track, zoom));
+}
+
+export function isAircraft3dHandoffTrack(
+  track: Pick<RenderableAircraft3dTrack, "lat" | "classKey">,
+  zoom: number
+): boolean {
+  return estimateAircraft3dScreenSizePixels(track, zoom) >= AIRCRAFT_3D_MIN_HANDOFF_SIZE_PX;
+}
+
 export function getAircraft3dAltitudeMeters(
   track: Pick<LiveTrack, "altitudeMeters" | "geoAltitudeMeters" | "onGround">
 ): number | null {
@@ -264,4 +295,17 @@ function buildDescriptor(manufacturer: string | null | undefined, model: string 
 
 function includesAnyKeyword(value: string, keywords: string[]): boolean {
   return keywords.some((keyword) => value.includes(keyword));
+}
+
+function estimateAircraft3dScreenSizePixels(
+  track: Pick<RenderableAircraft3dTrack, "lat" | "classKey">,
+  zoom: number
+): number {
+  return AIRCRAFT_3D_CLASS_MAJOR_AXIS_METERS[track.classKey] / getMercatorMetersPerPixel(track.lat, zoom);
+}
+
+function getMercatorMetersPerPixel(lat: number, zoom: number): number {
+  const clampedLat = Math.max(-WEB_MERCATOR_MAX_LATITUDE, Math.min(WEB_MERCATOR_MAX_LATITUDE, lat));
+  const latitudeScale = Math.cos((clampedLat * Math.PI) / 180);
+  return (EARTH_CIRCUMFERENCE_METERS * latitudeScale) / (WEB_MERCATOR_WORLD_SIZE_AT_ZOOM_0 * 2 ** zoom);
 }

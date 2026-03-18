@@ -1,3 +1,4 @@
+/** Shared traffic contract used by the browser traffic code and the local ship relay. */
 /** Canonical bounding box: [west, south, east, north] in WGS84 decimal degrees. */
 export type Bbox = [west: number, south: number, east: number, north: number];
 
@@ -26,7 +27,7 @@ export type LiveTrack = {
   renderModelKey?: string | null;
 };
 
-export type TrafficLayerStatusCode = "ok" | "zoom_in" | "unavailable";
+export type TrafficLayerStatusCode = "ok" | "zoom_in" | "unavailable" | "error";
 
 export type TrafficLayerStatus = {
   code: TrafficLayerStatusCode;
@@ -37,6 +38,7 @@ export type TrafficConnectionStatus =
   | "standby"
   | "connecting"
   | "connected"
+  | "aircraft_error"
   | "disconnected"
   | "unavailable";
 

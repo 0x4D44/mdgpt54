@@ -421,7 +421,7 @@ describe("createTrafficUI", () => {
 
     const dock = {
       querySelector: (sel: string) => (sel === ".credit-note" ? creditNote : null),
-      insertBefore: (node: unknown, ref: unknown) => {
+      insertBefore: (_node: unknown, ref: unknown) => {
         insertedBefore = ref;
       },
       appendChild: () => {}

@@ -167,6 +167,13 @@ describe("parsePositionReport", () => {
     expect(track!.speedKnots).toBeNull();
   });
 
+  it("returns null for non-object primitive input", () => {
+    expect(parsePositionReport(42)).toBeNull();
+    expect(parsePositionReport("string")).toBeNull();
+    expect(parsePositionReport(null)).toBeNull();
+    expect(parsePositionReport(undefined)).toBeNull();
+  });
+
   it("returns null label when ShipName is empty or whitespace-only", () => {
     const msg = {
       MessageType: "PositionReport",
@@ -241,6 +248,13 @@ describe("parseShipStaticData", () => {
       },
     };
     expect(parseShipStaticData(msg)).toBeNull();
+  });
+
+  it("returns null for non-object primitive input", () => {
+    expect(parseShipStaticData(42)).toBeNull();
+    expect(parseShipStaticData("string")).toBeNull();
+    expect(parseShipStaticData(null)).toBeNull();
+    expect(parseShipStaticData(undefined)).toBeNull();
   });
 
   it("returns null when neither Name nor ShipName is present", () => {

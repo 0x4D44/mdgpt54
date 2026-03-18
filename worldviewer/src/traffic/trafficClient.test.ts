@@ -1858,9 +1858,7 @@ describe("TrafficClient", () => {
     client.setLayers(false, false);
 
     // Resolve the identity shard
-    if (resolveIdentity) {
-      resolveIdentity();
-    }
+    resolveIdentity!();
     await flushAsyncWork();
     await flushAsyncWork();
 

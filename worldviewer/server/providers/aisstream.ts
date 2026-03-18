@@ -1,4 +1,10 @@
-import type { Bbox, LiveTrack } from "../trafficModel";
+import type { Bbox, LiveTrack } from "../../src/traffic/trafficTypes";
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
 
 export type AISStreamSubscription = {
   APIKey: string;
@@ -42,19 +48,24 @@ export function bboxToAISStreamSubscription(
  * Parse an AISStream PositionReport message into a LiveTrack.
  * Returns null if the position is invalid (AIS uses 181/91 for unavailable).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function parsePositionReport(msg: any, now: number = Date.now()): LiveTrack | null {
-  const pos = msg?.Message?.PositionReport;
+export function parsePositionReport(msg: unknown, now: number = Date.now()): LiveTrack | null {
+  const root = asRecord(msg);
+  if (!root) return null;
+
+  const message = asRecord(root.Message);
+  const pos = asRecord(message?.PositionReport);
   if (!pos) return null;
 
-  const lng: number = pos.Longitude;
-  const lat: number = pos.Latitude;
+  const lng = pos.Longitude;
+  const lat = pos.Latitude;
+  if (typeof lng !== "number" || typeof lat !== "number") return null;
   if (lng > 180 || lng < -180 || lat > 90 || lat < -90) return null;
 
-  const mmsi = msg.MetaData?.MMSI;
+  const meta = asRecord(root.MetaData);
+  const mmsi = meta?.MMSI;
   if (mmsi == null) return null;
 
-  const shipName: string | undefined = msg.MetaData?.ShipName;
+  const shipName = meta?.ShipName;
 
   return {
     id: String(mmsi),
@@ -64,7 +75,7 @@ export function parsePositionReport(msg: any, now: number = Date.now()): LiveTra
     heading: normalizeHeading(pos.TrueHeading, pos.Cog),
     speedKnots: typeof pos.Sog === "number" ? pos.Sog : null,
     altitudeMeters: null,
-    label: shipName?.trim() || null,
+    label: typeof shipName === "string" ? shipName.trim() || null : null,
     source: "aisstream",
     updatedAt: now,
   };
@@ -74,10 +85,17 @@ export function parsePositionReport(msg: any, now: number = Date.now()): LiveTra
  * Parse an AISStream ShipStaticData message into a name lookup entry.
  * Returns null if the message is malformed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function parseShipStaticData(msg: any): { mmsi: string; name: string } | null {
-  const mmsi = msg?.MetaData?.MMSI;
-  const name = msg?.Message?.ShipStaticData?.Name ?? msg?.MetaData?.ShipName;
+export function parseShipStaticData(msg: unknown): { mmsi: string; name: string } | null {
+  const root = asRecord(msg);
+  if (!root) return null;
+
+  const meta = asRecord(root.MetaData);
+  const mmsi = meta?.MMSI;
+
+  const message = asRecord(root.Message);
+  const staticData = asRecord(message?.ShipStaticData);
+  const name = staticData?.Name ?? meta?.ShipName;
+
   if (mmsi == null || !name) return null;
   return { mmsi: String(mmsi), name: String(name).trim() };
 }

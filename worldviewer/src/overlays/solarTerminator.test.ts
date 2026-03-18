@@ -10,63 +10,19 @@ import {
   getSubsolarPoint,
   normalizeLongitude
 } from "./solarTerminator";
+import { createMockMap } from "./test/createMockMap";
 
-type LoadListener = () => void;
-
-class MockMap {
-  styleLoaded = true;
-  readonly addSource = vi.fn((id: string, source: unknown) => {
-    this.sources.set(id, {
-      ...((source as Record<string, unknown>) ?? {}),
-      setData: vi.fn()
-    });
-  });
-  readonly getSource = vi.fn((id: string) => this.sources.get(id));
-  readonly addLayer = vi.fn((layer: { id: string }, beforeId?: string) => {
-    this.layers.set(layer.id, layer);
-    this.layerAnchors.set(layer.id, beforeId);
-  });
-  readonly getLayer = vi.fn((id: string) => this.layers.get(id));
-  readonly removeLayer = vi.fn((id: string) => {
-    this.layers.delete(id);
-    this.layerAnchors.delete(id);
-  });
-  readonly removeSource = vi.fn((id: string) => {
-    this.sources.delete(id);
-  });
-  readonly isStyleLoaded = vi.fn(() => this.styleLoaded);
-  readonly on = vi.fn((event: string, listener: LoadListener) => {
-    if (event === "load") {
-      this.loadListeners.add(listener);
-    }
-  });
-  readonly off = vi.fn((event: string, listener: LoadListener) => {
-    if (event === "load") {
-      this.loadListeners.delete(listener);
-    }
-  });
-  readonly getStyle = vi.fn(() => ({
-    layers: [
+function createSolarMockMap() {
+  return createMockMap({
+    defaultStyleLayers: [
       { id: "satellite-imagery", type: "raster", source: "satellite" },
       { id: "label_city", type: "symbol" }
-    ]
-  }));
-
-  private readonly sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
-  private readonly layers = new Map<string, unknown>();
-  private readonly layerAnchors = new Map<string, string | undefined>();
-  private readonly loadListeners = new Set<LoadListener>();
-
-  emitLoad(): void {
-    this.styleLoaded = true;
-    for (const listener of [...this.loadListeners]) {
-      listener();
-    }
-  }
-
-  getLayerAnchor(id: string): string | undefined {
-    return this.layerAnchors.get(id);
-  }
+    ],
+    sourceFactory: (_id, source) => ({
+      ...source,
+      setData: vi.fn()
+    })
+  });
 }
 
 type LngLat = {
@@ -315,7 +271,7 @@ describe("solarTerminator", () => {
   });
 
   it("waits for the first style load before adding the overlay", () => {
-    const map = new MockMap();
+    const map = createSolarMockMap();
     map.styleLoaded = false;
     const overlay = createSolarTerminatorOverlay({
       getNow: () => new Date("2026-03-20T12:00:00Z")
@@ -332,7 +288,7 @@ describe("solarTerminator", () => {
   });
 
   it("anchors above the last obscuring base layer when no label or road anchor is available", () => {
-    const map = new MockMap();
+    const map = createSolarMockMap();
     map.getStyle.mockReturnValue({
       layers: [
         { id: "background", type: "background" },
@@ -352,7 +308,7 @@ describe("solarTerminator", () => {
   });
 
   it("does not duplicate the source or layer on repeated enable calls", () => {
-    const map = new MockMap();
+    const map = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => new Date("2026-03-20T12:00:00Z")
     });
@@ -365,7 +321,7 @@ describe("solarTerminator", () => {
   });
 
   it("cancels a pending load handler when disabled before style load", () => {
-    const map = new MockMap();
+    const map = createSolarMockMap();
     map.styleLoaded = false;
     const overlay = createSolarTerminatorOverlay({
       getNow: () => new Date("2026-03-20T12:00:00Z")
@@ -381,7 +337,7 @@ describe("solarTerminator", () => {
 
   it("updates the night geometry once per minute while enabled", () => {
     let now = new Date("2026-03-20T12:00:00Z");
-    const map = new MockMap();
+    const map = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => now
     });
@@ -396,7 +352,7 @@ describe("solarTerminator", () => {
   });
 
   it("removes the overlay cleanly and tolerates repeated disable calls", () => {
-    const map = new MockMap();
+    const map = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => new Date("2026-03-20T12:00:00Z")
     });
@@ -413,7 +369,7 @@ describe("solarTerminator", () => {
 
   it("stops the interval timer on disable and does not fire stale ticks", () => {
     let now = new Date("2026-03-20T12:00:00Z");
-    const map = new MockMap();
+    const map = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => now,
       updateIntervalMs: 60_000
@@ -432,7 +388,7 @@ describe("solarTerminator", () => {
   });
 
   it("clears load handler references when clearLoadHandler runs with null handler", () => {
-    const map = new MockMap();
+    const map = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => new Date("2026-03-20T12:00:00Z")
     });
@@ -447,7 +403,7 @@ describe("solarTerminator", () => {
 
   it("updates existing source via setData on timer tick instead of adding a new one", () => {
     let now = new Date("2026-03-20T12:00:00Z");
-    const map = new MockMap();
+    const map = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => now,
       updateIntervalMs: 60_000
@@ -502,8 +458,8 @@ describe("solarTerminator", () => {
 
   it("guards against stale timer ticks after the map is swapped", () => {
     let now = new Date("2026-03-20T12:00:00Z");
-    const map1 = new MockMap();
-    const map2 = new MockMap();
+    const map1 = createSolarMockMap();
+    const map2 = createSolarMockMap();
     const overlay = createSolarTerminatorOverlay({
       getNow: () => now,
       updateIntervalMs: 60_000

@@ -1,4 +1,4 @@
-import type { Bbox } from "./trafficModel";
+import type { Bbox } from "../src/traffic/trafficTypes";
 
 /** Compute the union of multiple bboxes, or null if the list is empty. */
 export function bboxUnion(boxes: Bbox[]): Bbox | null {

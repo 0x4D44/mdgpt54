@@ -12,6 +12,10 @@ export type ShipRuntimeState =
 
 export const STATIC_SHIP_MESSAGE =
   "Ships need a live relay and are unavailable on the static GitHub Pages build.";
+export const AIRCRAFT_FEED_ERROR_MESSAGE =
+  "Aircraft feed failed. Retrying live aircraft updates.";
+export const SHIP_RELAY_ERROR_MESSAGE =
+  "Ship relay disconnected. Reconnecting to live ship updates.";
 
 export function resolveLocalTrafficStatus(
   state: TrafficToggleState,
@@ -35,6 +39,10 @@ export function summarizeConnectionStatus(
 
   if (states.includes("loading") || states.includes("connecting")) {
     return "connecting";
+  }
+
+  if (aircraftState === "error") {
+    return "aircraft_error";
   }
 
   if (states.includes("zoom_blocked")) {

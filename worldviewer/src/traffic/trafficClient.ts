@@ -13,6 +13,8 @@ import {
   type TrafficToggleState
 } from "./trafficHelpers";
 import {
+  AIRCRAFT_FEED_ERROR_MESSAGE,
+  SHIP_RELAY_ERROR_MESSAGE,
   resolveLocalTrafficStatus,
   summarizeConnectionStatus,
   type AircraftRuntimeState,
@@ -46,6 +48,7 @@ export class TrafficClient {
   private aircraftPollTimer: ReturnType<typeof setTimeout> | null = null;
   private aircraftAbort: AbortController | null = null;
   private aircraftFetchInFlight = false;
+  private aircraftConsecutiveErrors = 0;
   private lastAircraftPollAt = 0;
   private lastAircraftBbox: Bbox | null = null;
   private disposed = false;
@@ -200,6 +203,7 @@ export class TrafficClient {
       this.lastAircraftPollAt = now;
       this.lastAircraftBbox = bbox;
       this.aircraftRuntime = "live";
+      this.aircraftConsecutiveErrors = 0;
       void this.aircraftIdentity.ensureLoadedForTracks(parsedAircraft).then((loaded) => {
         if (!loaded || this.disposed) {
           return;
@@ -215,6 +219,7 @@ export class TrafficClient {
       console.warn("[opensky] browser poll error:", error);
       this.latestAircraft = [];
       this.aircraftRuntime = "error";
+      this.aircraftConsecutiveErrors++;
     } finally {
       if (this.aircraftAbort === abortController) {
         this.aircraftAbort = null;
@@ -231,13 +236,24 @@ export class TrafficClient {
       return;
     }
 
-    const elapsed = this.lastAircraftPollAt === 0 ? OPENSKY_POLL_MS : Date.now() - this.lastAircraftPollAt;
-    const delay = this.lastAircraftPollAt === 0 ? OPENSKY_POLL_MS : Math.max(0, OPENSKY_POLL_MS - elapsed);
+    const delay = this.aircraftPollDelayMs();
 
     this.aircraftPollTimer = setTimeout(() => {
       this.aircraftPollTimer = null;
       void this.pollAircraftIfNeeded(true);
     }, delay);
+  }
+
+  private aircraftPollDelayMs(): number {
+    if (this.aircraftConsecutiveErrors > 0) {
+      return Math.min(
+        OPENSKY_POLL_MS * Math.pow(2, this.aircraftConsecutiveErrors - 1),
+        RECONNECT_MAX_MS,
+      );
+    }
+
+    const elapsed = this.lastAircraftPollAt === 0 ? OPENSKY_POLL_MS : Date.now() - this.lastAircraftPollAt;
+    return this.lastAircraftPollAt === 0 ? OPENSKY_POLL_MS : Math.max(0, OPENSKY_POLL_MS - elapsed);
   }
 
   private stopAircraftPolling(): void {
@@ -248,6 +264,7 @@ export class TrafficClient {
 
     this.stopAircraftRequest();
     this.aircraftFetchInFlight = false;
+    this.aircraftConsecutiveErrors = 0;
   }
 
   private stopAircraftRequest(): void {
@@ -336,8 +353,8 @@ export class TrafficClient {
         this.shipRuntime = "live";
         this.publishSnapshot();
         this.publishConnectionStatus();
-      } catch {
-        // ignore malformed messages
+      } catch (error) {
+        console.debug("[ship-relay] failed to parse message:", error);
       }
     });
 
@@ -349,7 +366,13 @@ export class TrafficClient {
       this.ws = null;
 
       if (!this.disposed && this.isShipRelayActive()) {
+        this.latestShips = [];
+        this.shipStatus = {
+          code: "error",
+          message: SHIP_RELAY_ERROR_MESSAGE
+        };
         this.shipRuntime = "error";
+        this.publishSnapshot();
         this.publishConnectionStatus();
         this.scheduleReconnect();
       }
@@ -414,7 +437,7 @@ export class TrafficClient {
   private publishSnapshot(): void {
     const localStatus = resolveLocalTrafficStatus(this.state, this.map.getZoom(), location.hostname);
     const status: SnapshotStatus = {
-      aircraft: localStatus.aircraft,
+      aircraft: this.resolveAircraftSnapshotStatus(localStatus.aircraft),
       ships: localStatus.ships.code === "ok" ? this.shipStatus : localStatus.ships
     };
 
@@ -461,6 +484,21 @@ export class TrafficClient {
       this.map.getZoom() >= MIN_LIVE_TRAFFIC_ZOOM &&
       !isStaticTrafficHost(location.hostname)
     );
+  }
+
+  private resolveAircraftSnapshotStatus(localStatus: SnapshotStatus["aircraft"]): SnapshotStatus["aircraft"] {
+    if (localStatus.code !== "ok") {
+      return localStatus;
+    }
+
+    if (this.aircraftRuntime === "error") {
+      return {
+        code: "error",
+        message: AIRCRAFT_FEED_ERROR_MESSAGE
+      };
+    }
+
+    return localStatus;
   }
 }
 

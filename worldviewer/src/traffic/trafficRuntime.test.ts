@@ -62,8 +62,16 @@ describe("summarizeConnectionStatus", () => {
     expect(summarizeConnectionStatus("off", "unavailable")).toBe("unavailable");
   });
 
+  it("reports an aircraft-specific error when the browser aircraft feed fails", () => {
+    expect(summarizeConnectionStatus("error", "off")).toBe("aircraft_error");
+  });
+
+  it("stays live when one transport is live and the other is degraded", () => {
+    expect(summarizeConnectionStatus("live", "error")).toBe("connected");
+    expect(summarizeConnectionStatus("error", "live")).toBe("connected");
+  });
+
   it("reports disconnected when enabled transports fail", () => {
-    expect(summarizeConnectionStatus("error", "off")).toBe("disconnected");
     expect(summarizeConnectionStatus("off", "error")).toBe("disconnected");
   });
 });
