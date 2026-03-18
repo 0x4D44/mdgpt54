@@ -1,0 +1,11 @@
+Step 1 is finished and kept scoped to Step 1.
+
+In [openskyDirect.ts](C:\language\mdgpt54\worldviewer\src\traffic\openskyDirect.ts), [trafficHelpers.ts](C:\language\mdgpt54\worldviewer\src\traffic\trafficHelpers.ts), [trafficLayers.ts](C:\language\mdgpt54\worldviewer\src\traffic\trafficLayers.ts), and [trafficTypes.ts](C:\language\mdgpt54\worldviewer\src\traffic\trafficTypes.ts), the aircraft path now uses `extended=1`, parses the Step 1 OpenSky fields via named indices, carries the Step 1 aircraft metadata on `LiveTrack`, derives `flightCode` with the exact HLD regex, keeps the popup ordering honest (`flightCode`, raw `callsign`, category, speed, altitude, age), and renders category-driven 2D aircraft silhouettes instead of the old caret. I also kept the popup helper from surfacing Step 2 identity rows yet.
+
+I added focused coverage in [openskyDirect.test.ts](C:\language\mdgpt54\worldviewer\src\traffic\openskyDirect.test.ts) and [trafficHelpers.test.ts](C:\language\mdgpt54\worldviewer\src\traffic\trafficHelpers.test.ts) for the extended fetch URL, Step 1 field parsing, exact flight-code derivation, popup ordering, altitude formatting, and category-driven rendering metadata.
+
+Validation passed:
+- `npm test`
+- `npm run build`
+
+One build-time TypeScript issue in the new MapLibre icon expression showed up during validation and is fixed. Remaining review noise: the worktree still has a pre-existing unrelated dirty file at [2026.03.12 - JRN - aircraft implementation supervision.md](C:\language\mdgpt54\worldviewer\wrk_journals\2026.03.12%20-%20JRN%20-%20aircraft%20implementation%20supervision.md), which I did not edit. The Vite large-chunk warning still appears on build, but it is outside this Step 1 task.

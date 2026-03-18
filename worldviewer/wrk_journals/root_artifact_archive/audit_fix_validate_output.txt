@@ -1,0 +1,12 @@
+Validation results:
+
+- `npx vitest run src/traffic/trafficHelpers.test.ts src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts` passed: 3 files, 64 tests.
+- `npm test` passed: 17 files, 156 tests.
+- `npm run build` failed during `tsc --noEmit`, so the Vite build did not complete.
+
+Failure:
+- TS2345 at [C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.ts#L127](C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.ts#L127): `number | null | undefined` is being passed where `number | null` is required.
+
+Warnings:
+- No files were modified and nothing was committed.
+- There was command-launch noise from `mdtimeout` calling `npx` directly on this Windows setup; after one retry, I ran the commands via `cmd /c` to get real results.

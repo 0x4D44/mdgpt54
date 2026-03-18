@@ -1,0 +1,21 @@
+**Changed**
+
+- In [aircraft3dLayer.ts](C:/language/mdgpt54/worldviewer/src/traffic/aircraft3dLayer.ts), I fixed the fixed-wing local-axis bug by making the procedural aircraft use a consistent local convention (`+Y` forward, `+Z` up), then simplified the model transform to match it.
+- I moved object reconciliation out of `render()` and into `setTracks()`, so the layer no longer rebuilds membership every render frame.
+- I removed per-frame `Matrix4` allocation churn by reusing scratch matrices and writing transforms straight into each object matrix.
+- I handled the latent enrichment case: if an existing track’s `classKey` changes, the old mesh is replaced instead of being silently reused.
+- I added focused regression coverage in [aircraft3dLayer.test.ts](C:/language/mdgpt54/worldviewer/src/traffic/aircraft3dLayer.test.ts) for axis alignment, class-change replacement, and heading/orientation.
+- I updated both journals: [aircraft step 3 implementation](C:/language/mdgpt54/worldviewer/wrk_journals/2026.03.12%20-%20JRN%20-%20aircraft%20step%203%20implementation.md) and [aircraft implementation supervision](C:/language/mdgpt54/worldviewer/wrk_journals/2026.03.12%20-%20JRN%20-%20aircraft%20implementation%20supervision.md).
+
+**Deliberately Not Changed**
+
+- I did not add stale-clone disposal churn. In the installed `three` version, this `clone(true)` path shares `geometry` and `material` references, so the claimed per-instance GPU leak does not hold here. I only added a short clarifying comment near clone creation.
+- I did not widen scope beyond the Step 3 3D layer/test seam, and I did not commit.
+
+**Validation**
+
+- `npx vitest run src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts`: passed
+- `npm test`: passed
+- `npm run build`: passed
+
+One caveat: my first full `npm test` attempt was run in parallel with `npm run build`, which triggered an esbuild memory blow-up and a noisy unrelated timeout. I reran `npm test` alone once, per repo instructions, and it passed cleanly. The existing Vite chunk-size warning during build is still present and still out of scope.

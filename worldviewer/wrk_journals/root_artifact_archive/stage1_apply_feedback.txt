@@ -1,0 +1,15 @@
+Applied the valid Stage 1 / Step 1 review feedback and kept it out of Step 2/3 territory.
+
+**Feedback**
+- Fixed: removed the five Step 2-only fields from [trafficTypes.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficTypes.ts#L17), and removed the four actual dead GeoJSON writes from [trafficHelpers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.ts#L80). `renderModelKey` was never serialized there, so there was nothing to delete on that path.
+- Fixed: added popup hierarchy styling in [style.css](C:/language/mdgpt54/worldviewer/src/style.css#L366) to match the new popup markup in [trafficLayers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficLayers.ts#L272).
+- Fixed: pulled the glider wingtip points inward in [trafficLayers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficLayers.ts#L412) so the stroke no longer clips at the canvas edge.
+- Fixed: simplified `deriveFlightCode` trimming in [trafficHelpers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.ts#L116), and added focused coverage for payload cleanup and direct visual-category mapping in [trafficHelpers.test.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.test.ts#L113), [trafficHelpers.test.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.test.ts#L236), and [trafficHelpers.test.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficHelpers.test.ts#L251).
+- Skipped: the rigid `aircraftIconExpression()` tuple typing in [trafficLayers.ts](C:/language/mdgpt54/worldviewer/src/traffic/trafficLayers.ts#L470). It is a maintainability nit, not a correctness issue for this pass.
+- Skipped: suppressing category `0`/`1` popup rows. That changes Stage 1 behavior, and the current Step 1 prompt keeps category in the popup identity order.
+- Skipped: restoring the aircraft source label in the popup. The current Stage 1 ordering omits it, and aircraft are all OpenSky in this step.
+
+**Validation**
+`npm test` passed with 104 tests. `npm run build` passed. The existing Vite large-chunk warning still appears on build.
+
+I also added a separate task journal at [2026.03.12 - JRN - stage1 review feedback step1.md](C:/language/mdgpt54/worldviewer/wrk_journals/2026.03.12%20-%20JRN%20-%20stage1%20review%20feedback%20step1.md#L1) and left the supervision journal untouched. The worktree still contains pre-existing dirty/untracked files, including [aircraft implementation supervision.md](C:/language/mdgpt54/worldviewer/wrk_journals/2026.03.12%20-%20JRN%20-%20aircraft%20implementation%20supervision.md) and the review artifacts, which I did not modify.

@@ -1,0 +1,10 @@
+Validation results for the current Stage 3 working tree:
+
+- `npx vitest run src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts`: failed. `src/traffic/aircraft3d.test.ts` passed, but `src/traffic/aircraft3dLayer.test.ts` had 1 failing test: `loads the 3D layer and hides matching 2D aircraft once the success path completes`. The failing assertion is at [C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.test.ts:119](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.test.ts#L119): expected `onVisibilityChange` to be called once, got `0`. Result: `20 passed, 1 failed`.
+
+- `npm test`: failed with the same single Stage 3 regression and no additional failures. Result: `154 passed, 1 failed`. I did not retry because this was not unrelated workspace noise.
+
+- `npm run build`: passed. `tsc --noEmit` succeeded and `vite build` completed successfully.
+
+Warnings:
+- Build produced Rollup chunk-size warnings: `assets/three.module-CpB-wl7P.js` at `725.22 kB` and `assets/index-DTKtnnYu.js` at `1,137.97 kB`, both over the `500 kB` warning threshold.

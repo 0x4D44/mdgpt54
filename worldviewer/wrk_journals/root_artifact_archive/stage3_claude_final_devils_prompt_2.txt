@@ -1,0 +1,13 @@
+You are the final devil's-advocate reviewer for Stage 3 of the aircraft 3D feature in C:\language\mdgpt54\worldviewer.
+
+Do not modify files. Read only:
+- C:\language\mdgpt54\worldviewer\stage3_review_packet_final.txt
+
+Output exactly these sections:
+Summary
+Critical Issues
+Assumptions To Challenge
+Verdict
+
+Challenge hidden assumptions and call out critical issues only. Cite file paths and line numbers from the packet.
+If there are no critical issues, say so plainly.

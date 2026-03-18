@@ -1,0 +1,56 @@
+---
+
+## Summary
+
+The implementation covers all three steps of the HLD with high fidelity. Core types, OpenSky field indices, activation thresholds, and shard scheme all match the design precisely. The architecture holds to the single-pipeline constraint and GitHub Pages story. Most of the plan-vs-code surface is clean.
+
+---
+
+## Critical Gaps
+
+**1. App-level wiring is absent from the packet — Step 3 integration is unverifiable**
+
+The packet contains `Aircraft3dController` and `updateTrafficData(map, snapshot, hiddenAircraftIds?)` as two separate things. For Step 3 to work, something outside this packet must:
+- instantiate `Aircraft3dController`
+- call `controller.setTracks(snapshot.aircraft)` on each snapshot callback
+- pass `controller.getHiddenTrackIds()` to `updateTrafficData` so the 2D symbols suppress correctly
+
+None of that wiring appears in the packet. The implementation in isolation is correct, but if the app entry point fails to connect `hiddenTrackIds` ? `updateTrafficData`, Step 3 activates the 3D layer while the 2D symbols remain visible for the same aircraft — directly violating the HLD goal of no empty transition state and no double-rendering. This is the most consequential unverifiable piece.
+
+**2. `trafficHelpers.test.ts` is staged-modified but excluded from the packet**
+
+Git status shows `M src/traffic/trafficHelpers.test.ts` (staged). The packet includes the source (`trafficHelpers.ts`) but not the tests. Functions added in Step 1 — `formatAircraftAltitude`, `buildAircraftPopupIdentity`, `getAircraftVisualCategory`, `getAircraftCategoryLabel` — need coverage. The HLD validation plan explicitly requires "unit tests for callsign-to-flight-code formatting." We cannot confirm compliance.
+
+**3. Step 3 custom layer has no specified position in the MapLibre layer stack**
+
+`Aircraft3dController.ensureLayer` calls `map.addLayer(layer)` with no `beforeId` parameter (`aircraft3dLayer.ts:3649`). MapLibre adds it at the top, meaning 3D aircraft render over map labels. The HLD does not address this. For a personal app it may be acceptable, but it is an unstated deviation from normal map UX.
+
+---
+
+## Assumptions To Challenge
+
+**Aircraft category 4 ? `"narrow-body"` (`aircraft3d.ts:3220–3224`)**
+
+OpenSky category 4 is "Large aircraft" which includes both narrow-bodies (737, A320) *and* widebodies (757, 767). The category fallback silently misclassifies a 767 as narrow-body if Step 2 identity data hasn't loaded. The HLD says "category can be requested with `extended=1`" and treats it as fallback only — this is acknowledged as approximate — but the mapping is wrong in one direction with no warning.
+
+**Aircraft category 7 ? `"bizjet"` (`aircraft3d.ts:3225–3226`)**
+
+OpenSky category 7 is "High-performance (> 5g acceleration and/or maneuver envelope data)" — primarily military fast jets. The implementation maps it to `"bizjet"` which renders a small business jet mesh. An F-16 will appear as a Gulfstream. Again, minor for a personal app but a silent misclassification.
+
+**`Three.js` shared-context state isolation is unverified at scale**
+
+`Aircraft3dRuntimeLayer.render` calls `this.renderer.resetState()` before rendering (`aircraft3dLayer.ts:3732`), which is the correct pattern. The spike confirmed one aircraft renders correctly. However, the assumption that Three.js `resetState()` restores all state that MapLibre depends on has not been verified under load (up to 24 aircraft) or across Three.js / MapLibre version updates. This is the highest-risk architectural assumption left standing.
+
+**`renderModelKey` population latency creates inconsistent initial 3D classification**
+
+`renderModelKey` is only set after the Step 2 shard for an aircraft's ICAO24 prefix loads. On first session, aircraft that appear before their shard loads use the type-code heuristics or category fallbacks in `selectAircraft3dClass`. A B738 will initially appear as `"narrow-body"` via the `NARROW_BODY_PREFIXES` prefix match (correct), but an aircraft with only an ICAO24 and no Step 2 data yet may get the wrong class until the shard arrives. This window is acknowledged implicitly by the "merge and re-publish" pattern in `trafficClient.ts:2170–2176` but is never made explicit in the HLD.
+
+---
+
+## Verdict
+
+Steps 1 and 2 are complete, correct, and well-tested relative to the HLD. Step 3's data-logic layer (`aircraft3d.ts`, `aircraft3dLayer.ts`) is correct in isolation with adequate unit tests.
+
+**The one genuine block is missing proof of app-level wiring.** Without seeing how `Aircraft3dController` is plugged into the snapshot callback and how `hiddenTrackIds` flows to `updateTrafficData`, Step 3 cannot be verified as shipped. If that wiring exists and is correct, this feature is ready. If it is absent, Step 3 silently double-renders without error, which is exactly the transition-state problem the HLD forbade.
+
+The two category misclassifications (cat 4, cat 7) are minor visual approximations acceptable for a personal app. The shared-context assumption is real but pre-validated by the spike. Everything else matches the plan.

@@ -1,0 +1,10 @@
+Validate the current final-audit changes in C:\language\mdgpt54\worldviewer without editing files.
+
+Run, in order:
+1. npx vitest run scripts/generateAircraftIdentity.test.ts src/traffic/trafficHelpers.test.ts src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts
+2. npm test
+3. npm run build
+
+Retry once only for command-launch noise.
+Do not modify files. Do not commit.
+Return a concise summary of results and warnings.

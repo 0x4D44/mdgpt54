@@ -1,0 +1,19 @@
+You are reviewing Stage 3 of the aircraft identity / 3D model feature in C:\language\mdgpt54\worldviewer.
+
+Use the code-reviewer rubric. Do not modify files.
+Read only this packet:
+- C:\language\mdgpt54\worldviewer\stage3_review_packet.txt
+
+The packet contains:
+- the Step 3 HLD section
+- Stage 3 implementation files with line numbers
+- the relevant integration excerpts
+
+Please output exactly these sections:
+Summary
+Overall Assessment
+Strengths
+Required Changes
+Suggestions
+
+Focus on real correctness, cleanup, performance, or design mismatches with the HLD. Cite file paths and line numbers from the packet.

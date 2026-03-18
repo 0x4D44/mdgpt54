@@ -1,0 +1,18 @@
+You are auditing the completed aircraft feature implementation in C:\language\mdgpt54\worldviewer against its HLD.
+
+Do not modify files. Read only:
+- C:\language\mdgpt54\worldviewer\aircraft_feature_audit_packet.txt
+
+Goal: compare the implementation against the HLD and confirm whether it is 100% complete for the scoped design.
+
+Please output exactly these sections:
+Summary
+Coverage Check
+Missing Or Mismatched Items
+Verdict
+
+Rules:
+- Focus on plan-vs-implementation completeness, not generic style opinions.
+- Call out only real gaps, mismatches, or unstated deviations from the HLD.
+- Cite file paths and line numbers from the packet.
+- If the implementation matches the HLD, say so plainly.

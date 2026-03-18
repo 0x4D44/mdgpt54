@@ -1,0 +1,20 @@
+**Changed**
+- Fixed the type-code classifier in [aircraft3d.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3d.ts#L53) by replacing the overly broad `C*` bizjet prefixes with narrower Citation-family matches, adding `C130` to the prop path, and adding a small helicopter prefix list. This stops `C208`/`C206`/`C402`/`C130` and `C17` from falling into `bizjet`.
+- Added focused regressions in [aircraft3d.test.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3d.test.ts#L196) for those false positives, preserved `C56X`/`C25B` bizjet coverage, and covered the helicopter prefix path.
+- Reworked the 3D layer in [aircraft3dLayer.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.ts#L22) so model placement uses the public custom-layer render inputs plus `MercatorCoordinate`, instead of casting through `map.transform`.
+- Stopped infinite retry churn after a failed `import("three")` in [aircraft3dLayer.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.ts#L110): it now warns once, records the failure, and leaves 2D aircraft visible.
+- Changed `syncAircraftObjects` in [aircraft3dLayer.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.ts#L228) to avoid deleting from the object map while iterating it.
+- Removed the misleading `antialias` option when creating the Three renderer against MapLibre’s reused GL context in [aircraft3dLayer.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.ts#L176).
+- Added a focused controller test in [aircraft3dLayer.test.ts](C:\language\mdgpt54\worldviewer\src\traffic\aircraft3dLayer.test.ts#L65) proving failed `three` loads warn once and do not retry on later syncs.
+- Updated the Stage 3 implementation journal and supervision journal: [2026.03.12 - JRN - aircraft step 3 implementation.md](C:\language\mdgpt54\worldviewer\wrk_journals\2026.03.12 - JRN - aircraft step 3 implementation.md), [2026.03.12 - JRN - aircraft implementation supervision.md](C:\language\mdgpt54\worldviewer\wrk_journals\2026.03.12 - JRN - aircraft implementation supervision.md).
+
+**Skipped**
+- No commit.
+- No scratch review text files were touched.
+- No broader refactor, asset/model pipeline work, or chunk-size follow-up beyond the listed review feedback.
+
+**Validation**
+- `npx vitest run src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts` passed.
+- `npm test` passed.
+- `npm run build` passed.
+- Remaining signal: the pre-existing Vite chunk-size warning still appears during build.

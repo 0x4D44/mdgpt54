@@ -1,0 +1,52 @@
+---
+
+## Summary
+
+Stage 2 adds the aircraft identity data pipeline: a generator script that processes OpenSky CSV into 256 prefix-sharded JSON files, and a runtime store that lazily fetches those shards, caches them per session, and merges identity fields into live tracks. The URL resolution layer handles Vite's relative `./` base for static sub-path hosting.
+
+---
+
+## Overall Assessment
+
+**Looks good / Needs minor changes.** No correctness blockers. One test robustness concern and a few nits.
+
+---
+
+## Strengths
+
+- **In-flight deduplication** in `AircraftIdentityStore.ensureLoadedForPrefix` (`aircraftIdentity.ts:71–83`) is correctly implemented — concurrent calls for the same prefix share a single `Promise`, not separate fetches.
+- **Reference-equality change detection** in `mergeAircraftIdentityIntoTracks` (`aircraftIdentity.ts:34–45`) avoids allocating a new array when no identities changed. The `?? null` normalisation in the equality check (`aircraftIdentity.ts:147–151`) correctly handles `undefined` vs explicit `null` after the spread.
+- **`assertAircraftIdentityOutputDir`** (`generateAircraftIdentity.ts:179–188`) is a clean safety guard that prevents the pruning loop from touching unrelated directories. The path strip of trailing separators before `basename` is correct.
+- **URL resolution** for the `./` relative Vite base is subtle and the test suite covers the non-obvious edge cases: missing trailing slash, dotted directory names, and `.html` suffix disambiguation.
+- **`CURRENT_VITE_BASE_URL`** is read from the real `vite.config` in tests, so the production URL builder is verified against the actual deployed configuration rather than a copy-pasted string.
+- Test cleanup via `tempDirs.splice(0)` in `afterEach` is clean and handles concurrent async teardown correctly.
+
+---
+
+## Required Changes
+
+**`src/traffic/aircraftIdentity.test.ts:229`** — The "falls back to a localhost base outside the browser" test relies on `document` and `location` being absent, but in a jsdom test environment both are present as globals and `document.baseURI` would be `"about:blank"`. If jsdom is active, `getCurrentLocationUrl()` returns `"about:blank"`, which then gets passed to `new URL()` as the base — the `about:` scheme does not support relative resolution and would throw. The test must either:
+- explicitly nullify the globals: `vi.stubGlobal("document", undefined); vi.stubGlobal("location", undefined)`, or
+- be annotated with `// environment: node` and confirmed that the vitest config sets `environment: 'node'` for this file.
+
+---
+
+## Suggestions
+
+- **Nit: `scripts/generateAircraftIdentity.ts:76,175`** — Path concatenation uses a hardcoded `/` separator (`${options.outputDir}/${prefix}.json`, `${outputDir}/${entry.name}`). `basename` is already imported from `node:path`; adding `join` to that import and using `path.join()` would be safer on Windows and more idiomatic. Node's `fs` APIs accept `/` on Windows, so this is not a current bug, but consistency with `basename` usage is worth it.
+
+- **Optional: `scripts/generateAircraftIdentity.ts:112`** — The error message `"Missing input CSV path. Use --input <path>."` doesn't mention the short form `-i`. Since `-i` is supported, mentioning it would help users who are reading the error.
+
+- **Optional: `scripts/generateAircraftIdentity.test.ts:82–89`** — `parseGeneratorArgs` is tested only for the explicit flag happy path. The positional argument form (`argv = ["path/to/file.csv"]`) and the missing-input error are both exercisable without I/O; worth adding.
+
+- **Optional: `src/traffic/aircraftIdentity.ts:49`** — `failedPrefixes` is never cleared in the session, so a transient 503 permanently blacklists the shard. This is probably intentional (no flood of retries), but worth a comment documenting the policy — otherwise the next person will wonder whether clearing it on reconnect was overlooked.
+
+---
+
+## Questions
+
+1. **Test environment**: Does the vitest config for `src/traffic/` use `environment: 'node'` or `'jsdom'`? The answer determines whether the "falls back to localhost" test (line 229) is currently passing for the right reason or by coincidence.
+
+2. **ICAO24 case normalisation**: `shard[entry.icao24] = entry.identity` in the generator stores keys with whatever case `extractAircraftIdentityEntry` returns. The runtime looks up by `track.id.toLowerCase()` (`aircraftIdentity.ts:135`). Is `extractAircraftIdentityEntry` guaranteed to emit lowercase keys? If the CSV contains mixed-case `icao24` values, uppercase ones would be silently missed at runtime.
+
+3. **`assertAircraftIdentityOutputDir` guard scope**: The check validates `basename` but would accept `../../aircraft-identity`. Is that intentional (treating the guard as "best-effort naming discipline" rather than a security boundary), or should the guard also reject paths that traverse upward?

@@ -1,0 +1,1515 @@
+=== HLD Step 3 excerpt ===
+
+Quarterly refresh is enough for this personal app. We do not need an automated ingestion pipeline.
+
+### Stored Fields
+
+Retain only:
+
+- `icao24`
+- `registration`
+- `typeCode`
+- `manufacturer`
+- `model`
+
+Drop everything else during generation.
+
+### Static Artifact Strategy
+
+Use 256 static JSON shards by first two hex characters:
+
+```text
+public/
+  aircraft-identity/
+    00.json
+    01.json
+    ...
+    fe.json
+    ff.json
+```
+
+Why 256:
+
+- still mechanically simple and deterministic
+- keeps the real OpenSky skew inside the shard-size budget in practice
+- still static-host friendly for a personal app
+
+### Generation Guardrails
+
+The generation script must log output sizes for every shard before anything is committed.
+
+If any shard is obviously too large for this app, stop and revise the shard scheme before shipping the refresh. A good warning threshold is:
+
+- about `5 MB` uncompressed for a single shard, or
+- about `1.5 MB` gzip for a single shard
+
+We do not need automatic repartitioning. Manual review is enough.
+
+### Runtime Behaviour
+
+- when an aircraft becomes visible, look at the first two hex characters of `icao24`
+- fetch that shard if it is not already in the session cache
+- merge identity fields into matching visible aircraft
+- if a fetch fails or an identity is missing, keep Step 1 behaviour
+
+The cache is session-scoped only:
+
+```ts
+Map<string, Record<string, AircraftIdentity>>
+```
+
+No local storage. No persistence.
+
+### Flight Number Handling
+
+Step 2 still does not claim to know a true commercial flight number.
+
+It only improves:
+
+- registration
+- type code
+- manufacturer
+- model
+
+### Rendering Impact
+
+This step unlocks better visual selection:
+
+- `B738` -> 737-family model key
+- `A20N` -> A320-family model key
+- `B77W` -> 777-family model key
+- fallback to category class when type code is missing
+
+## Step 3: 3D Aircraft At Altitude
+
+### Goal
+
+Render aircraft as actual 3D objects at altitude when the camera is close enough for that to matter.
+
+### Go / No-Go Spike First
+
+Step 3 should not start as a full feature build.
+
+Start with a narrow proof-of-concept that answers three questions:
+
+1. can we render one aircraft model at live altitude inside a MapLibre custom layer without breaking map interaction?
+2. do we have at least six redistribution-safe, low-poly class models that look good enough?
+3. do representative views contain enough aircraft with usable altitude data to make the feature visible?
+
+If the answer to any of these is `no`, stop at Step 2.
+
+### Rendering Technology
+
+Use a MapLibre custom 3D layer.
+
+Load three.js and the glTF loader dynamically the first time 3D aircraft are actually needed. Do not ship them in the initial application bundle.
+
+Until the lazy-loaded 3D path is ready, keep showing 2D aircraft symbols. Do not show an empty transition state.
+
+### Why Not A Bigger 3D System
+
+We do not need:
+
+- a second renderer
+- a persistent aircraft scene graph across the whole world
+- a large asset pipeline
+- dozens of type-specific models up front
+
+We only need a bounded custom layer that renders a small set of visible aircraft.
+
+### Model Strategy
+
+Start with six class models only:
+
+- `narrow-body`
+- `wide-body`
+- `regional-jet`
+- `bizjet`
+- `prop`
+- `helicopter`
+
+Do not make Step 3 depend on type-specific `.glb` assets existing.
+
+If later we find license-compatible, low-poly models for common exact types, we can add overrides on top:
+
+- `B738`
+- `A320`
+- `A21N`
+- `B77W`
+- `B788`
+
+But class models are the required path. Exact overrides are optional polish.
+
+### Asset Rule
+
+Only use free, redistribution-safe aircraft models.
+
+Before Step 3 moves past the spike, identify the specific model pack or files we will use. If no acceptable class-model pack exists, Step 3 is deferred.
+
+### Activation Rules
+
+Use hysteresis so the view does not flicker between 2D and 3D.
+
+Activate 3D only when all are true:
+
+- zoom is at least `10.5`
+- pitch is at least `45`
+- visible unclustered aircraft count is at most `24`
+
+Drop back to 2D when any are true:
+
+- zoom falls below `10`
+- pitch falls below `35`
+- visible unclustered aircraft count rises to `32` or more
+
+The visible-count check must be based on the raw aircraft track array filtered by viewport bounds, not rendered map features. That avoids cluster interference.
+
+### Altitude Policy
+
+Step 3 should use:
+
+- `geoAltitudeMeters` when present
+- otherwise `altitudeMeters` as a visual fallback only
+
+At the zoom and pitch where Step 3 activates, the visual error from barometric fallback is acceptable for a representative personal-app view.
+
+The popup should make the altitude source explicit when needed.
+
+The Step 3 spike should sample a few representative views and record roughly how often `geoAltitudeMeters` is null. If the 3D view would usually contain very few renderable aircraft, defer Step 3.
+
+### Positioning
+
+- convert the aircraft position with `MercatorCoordinate.fromLngLat(lngLat, chosenAltitude)`
+- rotate by heading / true track
+- keep on-ground aircraft on the 2D symbol path
+
+### Performance Budget
+
+Step 3 is only acceptable if it stays cheap enough to matter.
+
+Acceptance target:
+
+- keep interactive frame rate above roughly `45 FPS` in a representative high-pitch aircraft view on Arthur's normal browser machine
+
+If that target is missed:
+
+- lower the cap
+- raise the zoom threshold
+- reduce model complexity
+
+Do not keep the feature on by default if it clearly harms navigation.
+
+## UI Changes
+
+Extend the aircraft popup to prefer this order:
+
+1. best-effort `flightCode`
+2. raw `callsign`
+3. registration
+4. manufacturer + model
+5. type code
+6. category label
+
+Do not add a new global toggle for Step 1 or Step 2.
+
+For Step 3, keep automatic activation by camera state in the first pass. If that proves confusing in practice, a single local `3D Aircraft` checkbox is an acceptable follow-up, but it is not part of the initial design.
+
+## Validation Plan
+
+### Step 1
+
+- unit tests for OpenSky parsing with `extended=1`
+- unit tests for callsign-to-flight-code formatting
+- manual check that GitHub Pages still shows aircraft
+
+### Step 2
+
+- unit tests for CSV-to-shard generation
+- unit tests for shard load and merge logic
+- manual check for missing-identity fallback
+- manual check that shard fetch failure is non-blocking
+- manual review of shard-size logs before committing a refresh
+
+### Step 3 Spike
+
+- one live aircraft rendered at altitude in a custom layer
+- one lazy-load proof that 3D code is not in the initial path
+- one concrete class-model asset set identified
+- one manual sample of a few representative views to estimate usable altitude coverage
+
+### Step 3 Full Build
+
+- unit tests for model key selection
+- manual browser checks for altitude placement, heading rotation, and LOD cutoff
+- manual check that 2D aircraft remain visible until the 3D path finishes loading
+
+## Risks
+
+- callsign is not the same as a true airline flight number
+- OpenSky category data could change or disappear for anonymous callers later
+- OpenSky aircraft metadata is crowdsourced and can be stale or incomplete
+- even 16 shards can still be uneven by prefix
+- 3D aircraft can get expensive fast if thresholds are too loose
+- Step 3 is still contingent on finding acceptable free model assets
+
+## Recommendation
+
+Proceed exactly in order:
+
+1. richer metadata and 2D silhouettes
+2. static `icao24` identity lookup
+3. Step 3 spike, then the 3D layer only if the spike proves it is worth shipping
+
+That keeps the design honest, keeps GitHub Pages viable, and avoids turning a personal app into an aviation platform.
+
+## Sources
+
+- [OpenSky API overview](https://opensky-network.org/opensky-api/)
+- [OpenSky REST API](https://opensky-network.org/api/docs/rest.html)
+- [OpenSky aircraft database](https://opensky-network.org/data/aircraft)
+- [MapLibre custom layer interface](https://maplibre.org/maplibre-gl-js/docs/API/interfaces/CustomLayerInterface/)
+- [MapLibre MercatorCoordinate](https://maplibre.org/maplibre-gl-js/docs/API/classes/MercatorCoordinate/)
+- [MapLibre 3D model example](https://maplibre.org/maplibre-gl-js/docs/examples/add-3d-model/)
+
+=== src/traffic/aircraft3d.ts ===
+   1: import { normalizeAircraftIdentityText, normalizeAircraftTypeCode } from "./aircraftIdentityData";
+   2: import type { Bbox, LiveTrack } from "./trafficTypes";
+   3: 
+   4: export type Aircraft3dClassKey =
+   5:   | "narrow-body"
+   6:   | "wide-body"
+   7:   | "regional-jet"
+   8:   | "bizjet"
+   9:   | "prop"
+  10:   | "helicopter";
+  11: 
+  12: export type RenderableAircraft3dTrack = {
+  13:   id: string;
+  14:   lng: number;
+  15:   lat: number;
+  16:   heading: number | null;
+  17:   altitudeMeters: number;
+  18:   classKey: Aircraft3dClassKey;
+  19: };
+  20: 
+  21: export type Aircraft3dModeDecision = {
+  22:   enabled: boolean;
+  23:   visibleRenderableCount: number;
+  24: };
+  25: 
+  26: export type Aircraft3dModeInput = {
+  27:   zoom: number;
+  28:   pitch: number;
+  29:   visibleRenderableCount: number;
+  30: };
+  31: 
+  32: type Aircraft3dView = {
+  33:   bounds: Bbox;
+  34:   zoom: number;
+  35:   pitch: number;
+  36:   tracks: LiveTrack[];
+  37: };
+  38: 
+  39: const AIRCRAFT_3D_ON_ZOOM = 10.5;
+  40: const AIRCRAFT_3D_OFF_ZOOM = 10;
+  41: const AIRCRAFT_3D_ON_PITCH = 45;
+  42: const AIRCRAFT_3D_OFF_PITCH = 35;
+  43: const AIRCRAFT_3D_ON_COUNT = 24;
+  44: const AIRCRAFT_3D_OFF_COUNT = 32;
+  45: 
+  46: const MODEL_KEY_CLASS_MAP: Record<string, Aircraft3dClassKey> = {
+  47:   "airbus-a320-family": "narrow-body",
+  48:   "boeing-737-family": "narrow-body",
+  49:   "boeing-777-family": "wide-body",
+  50:   "boeing-787-family": "wide-body"
+  51: };
+  52: 
+  53: const NARROW_BODY_PREFIXES = ["A318", "A319", "A320", "A321", "A20N", "A21N", "B73", "B37", "B38", "B39"];
+  54: const WIDE_BODY_PREFIXES = ["A330", "A332", "A333", "A339", "A340", "A350", "A359", "A35K", "A380", "B74", "B76", "B77", "B78", "B79", "MD11", "DC10"];
+  55: const REGIONAL_JET_PREFIXES = ["CRJ", "E17", "E18", "E19", "E2", "BCS", "A220", "SU95", "ARJ"];
+  56: const HELICOPTER_PREFIXES = ["R22", "R44", "R66", "EC35", "EC45", "A139", "B06", "B407", "B429", "S76"];
+  57: const BIZJET_PREFIXES = [
+  58:   "C25",
+  59:   "C500",
+  60:   "C510",
+  61:   "C525",
+  62:   "C550",
+  63:   "C560",
+  64:   "C56X",
+  65:   "C650",
+  66:   "C680",
+  67:   "C700",
+  68:   "C750",
+  69:   "CL3",
+  70:   "CL6",
+  71:   "E35",
+  72:   "E45",
+  73:   "E50",
+  74:   "E55",
+  75:   "E75S",
+  76:   "FA",
+  77:   "GL",
+  78:   "H25",
+  79:   "LJ",
+  80:   "PRM",
+  81:   "BE40"
+  82: ];
+  83: const PROP_PREFIXES = ["AT", "DH8", "DHC", "C208", "C206", "C130", "C402", "PC12", "BE20", "BE9L", "JS3", "L410", "SF34", "SW4"];
+  84: const HELICOPTER_KEYWORDS = ["helicopter", "rotor", "bell", "robinson", "sikorsky", "ec135", "ec145", "as350", "aw139"];
+  85: const BIZJET_KEYWORDS = ["citation", "gulfstream", "learjet", "challenger", "falcon", "phenom", "hawker"];
+  86: const PROP_KEYWORDS = ["atr", "dash 8", "dash-8", "king air", "caravan", "turboprop", "pilatus pc-12"];
+  87: const REGIONAL_JET_KEYWORDS = ["embraer 170", "embraer 175", "embraer 190", "embraer 195", "crj", "a220", "cseries"];
+  88: const WIDE_BODY_KEYWORDS = ["787", "777", "767", "747", "330", "340", "350", "380", "md-11", "dc-10"];
+  89: const NARROW_BODY_KEYWORDS = ["737", "a318", "a319", "a320", "a321", "a20n", "a21n"];
+  90: 
+  91: export function resolveAircraft3dMode(
+  92:   previousEnabled: boolean,
+  93:   view: Aircraft3dView
+  94: ): Aircraft3dModeDecision {
+  95:   const visibleRenderableCount = buildRenderableAircraft3dTracks(view.tracks, view.bounds).length;
+  96:   return resolveAircraft3dModeFromVisibleCount(previousEnabled, {
+  97:     zoom: view.zoom,
+  98:     pitch: view.pitch,
+  99:     visibleRenderableCount
+ 100:   });
+ 101: }
+ 102: 
+ 103: export function resolveAircraft3dModeFromVisibleCount(
+ 104:   previousEnabled: boolean,
+ 105:   input: Aircraft3dModeInput
+ 106: ): Aircraft3dModeDecision {
+ 107:   if (previousEnabled) {
+ 108:     return {
+ 109:       enabled:
+ 110:         !(
+ 111:           input.zoom < AIRCRAFT_3D_OFF_ZOOM ||
+ 112:           input.pitch < AIRCRAFT_3D_OFF_PITCH ||
+ 113:           input.visibleRenderableCount >= AIRCRAFT_3D_OFF_COUNT
+ 114:         ),
+ 115:       visibleRenderableCount: input.visibleRenderableCount
+ 116:     };
+ 117:   }
+ 118: 
+ 119:   return {
+ 120:     enabled:
+ 121:       input.zoom >= AIRCRAFT_3D_ON_ZOOM &&
+ 122:       input.pitch >= AIRCRAFT_3D_ON_PITCH &&
+ 123:       input.visibleRenderableCount <= AIRCRAFT_3D_ON_COUNT,
+ 124:     visibleRenderableCount: input.visibleRenderableCount
+ 125:   };
+ 126: }
+ 127: 
+ 128: export function buildRenderableAircraft3dTracks(
+ 129:   tracks: LiveTrack[],
+ 130:   bounds: Bbox
+ 131: ): RenderableAircraft3dTrack[] {
+ 132:   const renderable: RenderableAircraft3dTrack[] = [];
+ 133: 
+ 134:   for (const track of tracks) {
+ 135:     if (track.kind !== "aircraft" || !isTrackWithinBounds(track, bounds)) {
+ 136:       continue;
+ 137:     }
+ 138: 
+ 139:     const altitudeMeters = getAircraft3dAltitudeMeters(track);
+ 140:     if (altitudeMeters === null) {
+ 141:       continue;
+ 142:     }
+ 143: 
+ 144:     renderable.push({
+ 145:       id: track.id,
+ 146:       lng: track.lng,
+ 147:       lat: track.lat,
+ 148:       heading: track.heading,
+ 149:       altitudeMeters,
+ 150:       classKey: selectAircraft3dClass(track)
+ 151:     });
+ 152:   }
+ 153: 
+ 154:   return renderable;
+ 155: }
+ 156: 
+ 157: export function getAircraft3dAltitudeMeters(
+ 158:   track: Pick<LiveTrack, "altitudeMeters" | "geoAltitudeMeters" | "onGround">
+ 159: ): number | null {
+ 160:   if (track.onGround === true) {
+ 161:     return null;
+ 162:   }
+ 163: 
+ 164:   return track.geoAltitudeMeters ?? track.altitudeMeters ?? null;
+ 165: }
+ 166: 
+ 167: export function selectAircraft3dClass(
+ 168:   track: Pick<LiveTrack, "renderModelKey" | "aircraftTypeCode" | "aircraftCategory" | "manufacturer" | "model">
+ 169: ): Aircraft3dClassKey {
+ 170:   const renderModelKey = normalizeAircraftIdentityText(track.renderModelKey)?.toLowerCase();
+ 171:   if (renderModelKey && renderModelKey in MODEL_KEY_CLASS_MAP) {
+ 172:     return MODEL_KEY_CLASS_MAP[renderModelKey];
+ 173:   }
+ 174: 
+ 175:   const typeCode = normalizeAircraftTypeCode(track.aircraftTypeCode);
+ 176:   if (typeCode) {
+ 177:     if (matchesAnyPrefix(typeCode, WIDE_BODY_PREFIXES)) {
+ 178:       return "wide-body";
+ 179:     }
+ 180:     if (matchesAnyPrefix(typeCode, NARROW_BODY_PREFIXES)) {
+ 181:       return "narrow-body";
+ 182:     }
+ 183:     if (matchesAnyPrefix(typeCode, REGIONAL_JET_PREFIXES)) {
+ 184:       return "regional-jet";
+ 185:     }
+ 186:     if (matchesAnyPrefix(typeCode, HELICOPTER_PREFIXES)) {
+ 187:       return "helicopter";
+ 188:     }
+ 189:     if (matchesAnyPrefix(typeCode, BIZJET_PREFIXES)) {
+ 190:       return "bizjet";
+ 191:     }
+ 192:     if (matchesAnyPrefix(typeCode, PROP_PREFIXES)) {
+ 193:       return "prop";
+ 194:     }
+ 195:   }
+ 196: 
+ 197:   const descriptor = buildDescriptor(track.manufacturer, track.model);
+ 198:   if (descriptor) {
+ 199:     if (includesAnyKeyword(descriptor, HELICOPTER_KEYWORDS)) {
+ 200:       return "helicopter";
+ 201:     }
+ 202:     if (includesAnyKeyword(descriptor, WIDE_BODY_KEYWORDS)) {
+ 203:       return "wide-body";
+ 204:     }
+ 205:     if (includesAnyKeyword(descriptor, NARROW_BODY_KEYWORDS)) {
+ 206:       return "narrow-body";
+ 207:     }
+ 208:     if (includesAnyKeyword(descriptor, REGIONAL_JET_KEYWORDS)) {
+ 209:       return "regional-jet";
+ 210:     }
+ 211:     if (includesAnyKeyword(descriptor, BIZJET_KEYWORDS)) {
+ 212:       return "bizjet";
+ 213:     }
+ 214:     if (includesAnyKeyword(descriptor, PROP_KEYWORDS)) {
+ 215:       return "prop";
+ 216:     }
+ 217:   }
+ 218: 
+ 219:   switch (track.aircraftCategory) {
+ 220:     case 5:
+ 221:     case 6:
+ 222:       return "wide-body";
+ 223:     case 4:
+ 224:       return "narrow-body";
+ 225:     case 7:
+ 226:       return "bizjet";
+ 227:     case 8:
+ 228:       return "helicopter";
+ 229:     case 2:
+ 230:     case 3:
+ 231:     case 9:
+ 232:     case 10:
+ 233:     case 11:
+ 234:     case 12:
+ 235:       return "prop";
+ 236:     default:
+ 237:       return "narrow-body";
+ 238:   }
+ 239: }
+ 240: 
+ 241: function isTrackWithinBounds(track: Pick<LiveTrack, "lng" | "lat">, bounds: Bbox): boolean {
+ 242:   const [west, south, east, north] = bounds;
+ 243:   if (track.lat < south || track.lat > north) {
+ 244:     return false;
+ 245:   }
+ 246: 
+ 247:   if (west <= east) {
+ 248:     return track.lng >= west && track.lng <= east;
+ 249:   }
+ 250: 
+ 251:   return track.lng >= west || track.lng <= east;
+ 252: }
+ 253: 
+ 254: function matchesAnyPrefix(value: string, prefixes: string[]): boolean {
+ 255:   return prefixes.some((prefix) => value.startsWith(prefix));
+ 256: }
+ 257: 
+ 258: function buildDescriptor(manufacturer: string | null | undefined, model: string | null | undefined): string | null {
+ 259:   const normalizedManufacturer = normalizeAircraftIdentityText(manufacturer);
+ 260:   const normalizedModel = normalizeAircraftIdentityText(model);
+ 261:   const combined = [normalizedManufacturer, normalizedModel].filter(Boolean).join(" ").toLowerCase();
+ 262:   return combined.length > 0 ? combined : null;
+ 263: }
+ 264: 
+ 265: function includesAnyKeyword(value: string, keywords: string[]): boolean {
+ 266:   return keywords.some((keyword) => value.includes(keyword));
+ 267: }
+
+=== src/traffic/aircraft3d.test.ts ===
+   1: import { describe, expect, it } from "vitest";
+   2: 
+   3: import {
+   4:   buildRenderableAircraft3dTracks,
+   5:   getAircraft3dAltitudeMeters,
+   6:   resolveAircraft3dMode,
+   7:   selectAircraft3dClass
+   8: } from "./aircraft3d";
+   9: import type { Bbox, LiveTrack } from "./trafficTypes";
+  10: 
+  11: function makeTrack(overrides: Partial<LiveTrack> = {}): LiveTrack {
+  12:   return {
+  13:     id: "abc123",
+  14:     kind: "aircraft",
+  15:     lng: -3.2,
+  16:     lat: 55.9,
+  17:     heading: 90,
+  18:     speedKnots: 250,
+  19:     altitudeMeters: 10000,
+  20:     label: "BAW123",
+  21:     source: "opensky",
+  22:     updatedAt: 1000000,
+  23:     ...overrides
+  24:   };
+  25: }
+  26: 
+  27: const VIEW_BBOX: Bbox = [-4, 55, -3, 56];
+  28: 
+  29: describe("resolveAircraft3dMode", () => {
+  30:   it("activates 3D only when zoom, pitch, and visible renderable aircraft thresholds all pass", () => {
+  31:     const tracks = Array.from({ length: 24 }, (_, index) =>
+  32:       makeTrack({
+  33:         id: `ab${index.toString(16).padStart(4, "0")}`,
+  34:         lng: -3.9 + index * 0.02,
+  35:         lat: 55.5,
+  36:         geoAltitudeMeters: 10200
+  37:       })
+  38:     );
+  39: 
+  40:     expect(
+  41:       resolveAircraft3dMode(false, {
+  42:         bounds: VIEW_BBOX,
+  43:         zoom: 10.5,
+  44:         pitch: 45,
+  45:         tracks
+  46:       })
+  47:     ).toEqual({
+  48:       enabled: true,
+  49:       visibleRenderableCount: 24
+  50:     });
+  51:   });
+  52: 
+  53:   it("does not activate when the visible renderable aircraft count is above the on threshold", () => {
+  54:     const tracks = Array.from({ length: 25 }, (_, index) =>
+  55:       makeTrack({
+  56:         id: `ab${index.toString(16).padStart(4, "0")}`,
+  57:         lng: -3.9 + index * 0.02,
+  58:         lat: 55.5,
+  59:         geoAltitudeMeters: 9800
+  60:       })
+  61:     );
+  62: 
+  63:     expect(
+  64:       resolveAircraft3dMode(false, {
+  65:         bounds: VIEW_BBOX,
+  66:         zoom: 11,
+  67:         pitch: 55,
+  68:         tracks
+  69:       })
+  70:     ).toEqual({
+  71:       enabled: false,
+  72:       visibleRenderableCount: 25
+  73:     });
+  74:   });
+  75: 
+  76:   it("keeps 3D enabled inside the hysteresis band", () => {
+  77:     const tracks = Array.from({ length: 31 }, (_, index) =>
+  78:       makeTrack({
+  79:         id: `ab${index.toString(16).padStart(4, "0")}`,
+  80:         lng: -3.95 + index * 0.02,
+  81:         lat: 55.6,
+  82:         altitudeMeters: 11000
+  83:       })
+  84:     );
+  85: 
+  86:     expect(
+  87:       resolveAircraft3dMode(true, {
+  88:         bounds: VIEW_BBOX,
+  89:         zoom: 10.1,
+  90:         pitch: 36,
+  91:         tracks
+  92:       })
+  93:     ).toEqual({
+  94:       enabled: true,
+  95:       visibleRenderableCount: 31
+  96:     });
+  97:   });
+  98: 
+  99:   it("drops back to 2D when any off threshold is crossed", () => {
+ 100:     const tracks = Array.from({ length: 32 }, (_, index) =>
+ 101:       makeTrack({
+ 102:         id: `ab${index.toString(16).padStart(4, "0")}`,
+ 103:         lng: -3.95 + index * 0.02,
+ 104:         lat: 55.6,
+ 105:         altitudeMeters: 11000
+ 106:       })
+ 107:     );
+ 108: 
+ 109:     expect(
+ 110:       resolveAircraft3dMode(true, {
+ 111:         bounds: VIEW_BBOX,
+ 112:         zoom: 10.2,
+ 113:         pitch: 40,
+ 114:         tracks
+ 115:       })
+ 116:     ).toEqual({
+ 117:       enabled: false,
+ 118:       visibleRenderableCount: 32
+ 119:     });
+ 120: 
+ 121:     expect(
+ 122:       resolveAircraft3dMode(true, {
+ 123:         bounds: VIEW_BBOX,
+ 124:         zoom: 9.99,
+ 125:         pitch: 50,
+ 126:         tracks: [makeTrack({ geoAltitudeMeters: 10000 })]
+ 127:       })
+ 128:     ).toEqual({
+ 129:       enabled: false,
+ 130:       visibleRenderableCount: 1
+ 131:     });
+ 132: 
+ 133:     expect(
+ 134:       resolveAircraft3dMode(true, {
+ 135:         bounds: VIEW_BBOX,
+ 136:         zoom: 11,
+ 137:         pitch: 34.99,
+ 138:         tracks: [makeTrack({ geoAltitudeMeters: 10000 })]
+ 139:       })
+ 140:     ).toEqual({
+ 141:       enabled: false,
+ 142:       visibleRenderableCount: 1
+ 143:     });
+ 144:   });
+ 145: 
+ 146:   it("counts only raw aircraft tracks in bounds that can actually render in 3D", () => {
+ 147:     const tracks: LiveTrack[] = [
+ 148:       makeTrack({ id: "render-1", geoAltitudeMeters: 10000 }),
+ 149:       makeTrack({ id: "render-2", altitudeMeters: 9000, geoAltitudeMeters: null }),
+ 150:       makeTrack({ id: "grounded", onGround: true, geoAltitudeMeters: 50 }),
+ 151:       makeTrack({ id: "flat", altitudeMeters: null, geoAltitudeMeters: null }),
+ 152:       makeTrack({ id: "outside", lng: -10, geoAltitudeMeters: 10000 }),
+ 153:       {
+ 154:         ...makeTrack({ id: "ship-1", geoAltitudeMeters: 10000 }),
+ 155:         kind: "ship"
+ 156:       }
+ 157:     ];
+ 158: 
+ 159:     expect(
+ 160:       resolveAircraft3dMode(false, {
+ 161:         bounds: VIEW_BBOX,
+ 162:         zoom: 11,
+ 163:         pitch: 50,
+ 164:         tracks
+ 165:       })
+ 166:     ).toEqual({
+ 167:       enabled: true,
+ 168:       visibleRenderableCount: 2
+ 169:     });
+ 170:   });
+ 171: });
+ 172: 
+ 173: describe("getAircraft3dAltitudeMeters", () => {
+ 174:   it("prefers geometric altitude when available", () => {
+ 175:     expect(getAircraft3dAltitudeMeters(makeTrack({ altitudeMeters: 10000, geoAltitudeMeters: 10120 }))).toBe(10120);
+ 176:   });
+ 177: 
+ 178:   it("falls back to barometric altitude when geometry is missing", () => {
+ 179:     expect(getAircraft3dAltitudeMeters(makeTrack({ altitudeMeters: 10000, geoAltitudeMeters: null }))).toBe(10000);
+ 180:   });
+ 181: 
+ 182:   it("suppresses on-ground aircraft from the 3D path", () => {
+ 183:     expect(getAircraft3dAltitudeMeters(makeTrack({ onGround: true, altitudeMeters: 30, geoAltitudeMeters: 40 }))).toBeNull();
+ 184:   });
+ 185: });
+ 186: 
+ 187: describe("selectAircraft3dClass", () => {
+ 188:   it("uses renderModelKey when it identifies a narrow-body family", () => {
+ 189:     expect(selectAircraft3dClass(makeTrack({ renderModelKey: "boeing-737-family" }))).toBe("narrow-body");
+ 190:   });
+ 191: 
+ 192:   it("uses renderModelKey when it identifies a wide-body family", () => {
+ 193:     expect(selectAircraft3dClass(makeTrack({ renderModelKey: "boeing-787-family" }))).toBe("wide-body");
+ 194:   });
+ 195: 
+ 196:   it("falls back to type-code heuristics for regional jets, bizjets, and props", () => {
+ 197:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "CRJ9" }))).toBe("regional-jet");
+ 198:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C56X" }))).toBe("bizjet");
+ 199:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C25B" }))).toBe("bizjet");
+ 200:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "AT76" }))).toBe("prop");
+ 201:   });
+ 202: 
+ 203:   it("does not let broad citation prefixes swallow props and military transports", () => {
+ 204:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C208" }))).toBe("prop");
+ 205:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C206" }))).toBe("prop");
+ 206:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C402" }))).toBe("prop");
+ 207:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C130" }))).toBe("prop");
+ 208:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "C17" }))).not.toBe("bizjet");
+ 209:   });
+ 210: 
+ 211:   it("uses helicopter type-code prefixes before descriptor and category fallbacks", () => {
+ 212:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "R44" }))).toBe("helicopter");
+ 213:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "EC35" }))).toBe("helicopter");
+ 214:     expect(selectAircraft3dClass(makeTrack({ aircraftTypeCode: "B429" }))).toBe("helicopter");
+ 215:   });
+ 216: 
+ 217:   it("falls back to aircraft category when Step 2 identity is missing", () => {
+ 218:     expect(selectAircraft3dClass(makeTrack({ aircraftCategory: 6 }))).toBe("wide-body");
+ 219:     expect(selectAircraft3dClass(makeTrack({ aircraftCategory: 8 }))).toBe("helicopter");
+ 220:   });
+ 221: });
+ 222: 
+ 223: describe("buildRenderableAircraft3dTracks", () => {
+ 224:   it("returns only visible aircraft with a chosen altitude and selected class", () => {
+ 225:     expect(
+ 226:       buildRenderableAircraft3dTracks(
+ 227:         [
+ 228:           makeTrack({ id: "b738", renderModelKey: "boeing-737-family", geoAltitudeMeters: 10500 }),
+ 229:           makeTrack({ id: "ground", renderModelKey: "boeing-737-family", geoAltitudeMeters: 20, onGround: true }),
+ 230:           makeTrack({ id: "outside", renderModelKey: "boeing-737-family", lng: -12, geoAltitudeMeters: 10500 })
+ 231:         ],
+ 232:         VIEW_BBOX
+ 233:       )
+ 234:     ).toEqual([
+ 235:       {
+ 236:         id: "b738",
+ 237:         lng: -3.2,
+ 238:         lat: 55.9,
+ 239:         heading: 90,
+ 240:         altitudeMeters: 10500,
+ 241:         classKey: "narrow-body"
+ 242:       }
+ 243:     ]);
+ 244:   });
+ 245: });
+
+=== src/traffic/aircraft3dLayer.ts ===
+   1: import { MercatorCoordinate, type CustomLayerInterface, type Map as MapLibreMap } from "maplibre-gl";
+   2: 
+   3: import {
+   4:   buildRenderableAircraft3dTracks,
+   5:   resolveAircraft3dModeFromVisibleCount,
+   6:   type Aircraft3dClassKey,
+   7:   type RenderableAircraft3dTrack
+   8: } from "./aircraft3d";
+   9: import { bboxFromBounds } from "./trafficHelpers";
+  10: import type { LiveTrack } from "./trafficTypes";
+  11: 
+  12: type ThreeModule = typeof import("three");
+  13: type CustomRenderParameters = Parameters<CustomLayerInterface["render"]>[1];
+  14: type VisibilityChangeHandler = () => void;
+  15: type ThreeLoader = () => Promise<ThreeModule>;
+  16: 
+  17: type AircraftMeshPrototypeMap = Record<Aircraft3dClassKey, import("three").Group>;
+  18: type AircraftModelMatrixScratch = {
+  19:   heading: import("three").Matrix4;
+  20:   scale: import("three").Matrix4;
+  21: };
+  22: 
+  23: const AIRCRAFT_3D_LAYER_ID = "live-aircraft-3d";
+  24: const AIRCRAFT_CLASS_KEY_USER_DATA = "aircraftClassKey";
+  25: const EMPTY_HIDDEN_IDS = new Set<string>();
+  26: const aircraftModelMatrixScratch = new WeakMap<object, AircraftModelMatrixScratch>();
+  27: 
+  28: export class Aircraft3dController {
+  29:   private readonly map: MapLibreMap;
+  30:   private readonly onVisibilityChange: VisibilityChangeHandler;
+  31:   private readonly loadThree: ThreeLoader;
+  32:   private latestTracks: LiveTrack[] = [];
+  33:   private hiddenTrackIds = EMPTY_HIDDEN_IDS;
+  34:   private enabled = false;
+  35:   private disposed = false;
+  36:   private syncHandle = 0;
+  37:   private layer: Aircraft3dRuntimeLayer | null = null;
+  38:   private layerLoad: Promise<void> | null = null;
+  39:   private threeLoadFailed = false;
+  40:   private warnedThreeLoadFailure = false;
+  41:   private readonly handleMapMove = () => {
+  42:     this.scheduleSync();
+  43:   };
+  44: 
+  45:   constructor(map: MapLibreMap, onVisibilityChange: VisibilityChangeHandler, loadThree: ThreeLoader = () => import("three")) {
+  46:     this.map = map;
+  47:     this.onVisibilityChange = onVisibilityChange;
+  48:     this.loadThree = loadThree;
+  49:     this.map.on("move", this.handleMapMove);
+  50:   }
+  51: 
+  52:   setTracks(tracks: LiveTrack[]): void {
+  53:     this.latestTracks = tracks;
+  54:     this.scheduleSync();
+  55:   }
+  56: 
+  57:   getHiddenTrackIds(): ReadonlySet<string> {
+  58:     return this.hiddenTrackIds;
+  59:   }
+  60: 
+  61:   dispose(): void {
+  62:     this.disposed = true;
+  63:     if (this.syncHandle !== 0) {
+  64:       cancelAnimationFrame(this.syncHandle);
+  65:       this.syncHandle = 0;
+  66:     }
+  67: 
+  68:     this.map.off("move", this.handleMapMove);
+  69: 
+  70:     if (this.layer && this.map.getLayer(AIRCRAFT_3D_LAYER_ID)) {
+  71:       this.map.removeLayer(AIRCRAFT_3D_LAYER_ID);
+  72:     }
+  73: 
+  74:     this.layer?.dispose();
+  75:     this.layer = null;
+  76:     this.hiddenTrackIds = EMPTY_HIDDEN_IDS;
+  77:   }
+  78: 
+  79:   private scheduleSync(): void {
+  80:     if (this.disposed || this.syncHandle !== 0) {
+  81:       return;
+  82:     }
+  83: 
+  84:     this.syncHandle = requestAnimationFrame(() => {
+  85:       this.syncHandle = 0;
+  86:       this.syncNow();
+  87:     });
+  88:   }
+  89: 
+  90:   private syncNow(): void {
+  91:     if (this.disposed) {
+  92:       return;
+  93:     }
+  94: 
+  95:     const renderableTracks = buildRenderableAircraft3dTracks(this.latestTracks, bboxFromBounds(this.map.getBounds()));
+  96:     const mode = resolveAircraft3dModeFromVisibleCount(this.enabled, {
+  97:       zoom: this.map.getZoom(),
+  98:       pitch: this.map.getPitch(),
+  99:       visibleRenderableCount: renderableTracks.length
+ 100:     });
+ 101:     this.enabled = mode.enabled;
+ 102: 
+ 103:     if (this.enabled && renderableTracks.length > 0) {
+ 104:       void this.ensureLayer();
+ 105:     }
+ 106: 
+ 107:     if (this.layer) {
+ 108:       this.layer.setTracks(this.enabled ? renderableTracks : []);
+ 109:     }
+ 110: 
+ 111:     this.updateHiddenTrackIds(
+ 112:       this.enabled && this.layer ? new Set(renderableTracks.map((track) => track.id)) : EMPTY_HIDDEN_IDS
+ 113:     );
+ 114:   }
+ 115: 
+ 116:   private async ensureLayer(): Promise<void> {
+ 117:     if (this.layer || this.layerLoad || this.disposed || this.threeLoadFailed) {
+ 118:       return this.layerLoad ?? Promise.resolve();
+ 119:     }
+ 120: 
+ 121:     this.layerLoad = this.loadThree()
+ 122:       .then((THREE) => {
+ 123:         if (this.disposed || this.layer) {
+ 124:           return;
+ 125:         }
+ 126: 
+ 127:         const layer = new Aircraft3dRuntimeLayer(this.map, THREE);
+ 128:         this.layer = layer;
+ 129:         if (!this.map.getLayer(AIRCRAFT_3D_LAYER_ID)) {
+ 130:           this.map.addLayer(layer);
+ 131:         }
+ 132:       })
+ 133:       .catch((error: unknown) => {
+ 134:         this.threeLoadFailed = true;
+ 135:         if (!this.warnedThreeLoadFailure) {
+ 136:           this.warnedThreeLoadFailure = true;
+ 137:           console.warn("Aircraft 3D layer unavailable; keeping 2D aircraft visible.", error);
+ 138:         }
+ 139:       })
+ 140:       .finally(() => {
+ 141:         this.layerLoad = null;
+ 142:         this.scheduleSync();
+ 143:       });
+ 144: 
+ 145:     return this.layerLoad;
+ 146:   }
+ 147: 
+ 148:   private updateHiddenTrackIds(nextIds: ReadonlySet<string>): void {
+ 149:     if (sameTrackIdSet(this.hiddenTrackIds, nextIds)) {
+ 150:       return;
+ 151:     }
+ 152: 
+ 153:     this.hiddenTrackIds = nextIds.size > 0 ? new Set(nextIds) : EMPTY_HIDDEN_IDS;
+ 154:     this.onVisibilityChange();
+ 155:   }
+ 156: }
+ 157: 
+ 158: class Aircraft3dRuntimeLayer implements CustomLayerInterface {
+ 159:   readonly id = AIRCRAFT_3D_LAYER_ID;
+ 160:   readonly type = "custom" as const;
+ 161:   readonly renderingMode = "3d" as const;
+ 162: 
+ 163:   private readonly map: MapLibreMap;
+ 164:   private readonly THREE: ThreeModule;
+ 165:   private readonly scene: import("three").Scene;
+ 166:   private readonly camera: import("three").Camera;
+ 167:   private readonly prototypes: AircraftMeshPrototypeMap;
+ 168:   private readonly objects = new Map<string, import("three").Group>();
+ 169:   private renderer: import("three").WebGLRenderer | null = null;
+ 170:   private tracks: RenderableAircraft3dTrack[] = [];
+ 171: 
+ 172:   constructor(map: MapLibreMap, THREE: ThreeModule) {
+ 173:     this.map = map;
+ 174:     this.THREE = THREE;
+ 175:     this.scene = new THREE.Scene();
+ 176:     this.scene.matrixAutoUpdate = false;
+ 177:     this.camera = new THREE.Camera();
+ 178:     this.prototypes = createAircraftMeshPrototypes(THREE);
+ 179:     addAircraftLights(THREE, this.scene);
+ 180:   }
+ 181: 
+ 182:   onAdd(map: MapLibreMap, gl: WebGLRenderingContext | WebGL2RenderingContext): void {
+ 183:     this.renderer = new this.THREE.WebGLRenderer({
+ 184:       canvas: map.getCanvas(),
+ 185:       context: gl
+ 186:     });
+ 187:     this.renderer.autoClear = false;
+ 188:   }
+ 189: 
+ 190:   onRemove(): void {
+ 191:     this.dispose();
+ 192:   }
+ 193: 
+ 194:   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, { defaultProjectionData }: CustomRenderParameters): void {
+ 195:     if (!this.renderer) {
+ 196:       return;
+ 197:     }
+ 198: 
+ 199:     this.camera.projectionMatrix.fromArray(defaultProjectionData.mainMatrix as ArrayLike<number>);
+ 200:     this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+ 201: 
+ 202:     for (const track of this.tracks) {
+ 203:       const object = this.objects.get(track.id);
+ 204:       if (!object) {
+ 205:         continue;
+ 206:       }
+ 207: 
+ 208:       object.visible = true;
+ 209:       applyAircraftModelMatrix(this.THREE, object.matrix, track);
+ 210:       object.matrixWorldNeedsUpdate = true;
+ 211:     }
+ 212: 
+ 213:     this.renderer.resetState();
+ 214:     this.renderer.render(this.scene, this.camera);
+ 215:   }
+ 216: 
+ 217:   setTracks(tracks: RenderableAircraft3dTrack[]): void {
+ 218:     this.tracks = tracks;
+ 219:     syncAircraftObjects(this.scene, this.objects, this.prototypes, this.tracks);
+ 220:     this.map.triggerRepaint();
+ 221:   }
+ 222: 
+ 223:   dispose(): void {
+ 224:     for (const object of this.objects.values()) {
+ 225:       this.scene.remove(object);
+ 226:     }
+ 227:     this.objects.clear();
+ 228:     disposePrototypes(this.THREE, this.prototypes);
+ 229:     this.renderer?.dispose();
+ 230:     this.renderer = null;
+ 231:   }
+ 232: }
+ 233: 
+ 234: function syncAircraftObjects(
+ 235:   scene: import("three").Scene,
+ 236:   objects: Map<string, import("three").Group>,
+ 237:   prototypes: AircraftMeshPrototypeMap,
+ 238:   tracks: RenderableAircraft3dTrack[]
+ 239: ): void {
+ 240:   const nextIds = new Set<string>();
+ 241: 
+ 242:   for (const track of tracks) {
+ 243:     nextIds.add(track.id);
+ 244:     const current = objects.get(track.id);
+ 245:     const currentClassKey = current?.userData[AIRCRAFT_CLASS_KEY_USER_DATA] as Aircraft3dClassKey | undefined;
+ 246:     if (current && currentClassKey === track.classKey) {
+ 247:       continue;
+ 248:     }
+ 249: 
+ 250:     if (current) {
+ 251:       scene.remove(current);
+ 252:       objects.delete(track.id);
+ 253:     }
+ 254: 
+ 255:     // three.js Mesh.copy shares geometry/material references here, so stale clones only need scene removal.
+ 256:     const instance = prototypes[track.classKey].clone(true);
+ 257:     instance.name = track.id;
+ 258:     instance.matrixAutoUpdate = false;
+ 259:     instance.frustumCulled = false;
+ 260:     instance.userData[AIRCRAFT_CLASS_KEY_USER_DATA] = track.classKey;
+ 261:     setObjectFrustumCulling(instance, false);
+ 262:     scene.add(instance);
+ 263:     objects.set(track.id, instance);
+ 264:   }
+ 265: 
+ 266:   const staleIds: string[] = [];
+ 267:   for (const [id, object] of objects.entries()) {
+ 268:     if (nextIds.has(id)) {
+ 269:       continue;
+ 270:     }
+ 271: 
+ 272:     scene.remove(object);
+ 273:     staleIds.push(id);
+ 274:   }
+ 275: 
+ 276:   for (const id of staleIds) {
+ 277:     objects.delete(id);
+ 278:   }
+ 279: }
+ 280: 
+ 281: function setObjectFrustumCulling(object: import("three").Object3D, enabled: boolean): void {
+ 282:   object.frustumCulled = enabled;
+ 283:   object.traverse((child) => {
+ 284:     child.frustumCulled = enabled;
+ 285:   });
+ 286: }
+ 287: 
+ 288: function createAircraftMeshPrototypes(THREE: ThreeModule): AircraftMeshPrototypeMap {
+ 289:   return {
+ 290:     "narrow-body": createFixedWingMesh(THREE, {
+ 291:       fuselageLength: 38,
+ 292:       fuselageRadius: 1.9,
+ 293:       wingspan: 34,
+ 294:       wingChord: 6.2,
+ 295:       tailSpan: 13,
+ 296:       color: "#7ed9ff"
+ 297:     }),
+ 298:     "wide-body": createFixedWingMesh(THREE, {
+ 299:       fuselageLength: 60,
+ 300:       fuselageRadius: 3.1,
+ 301:       wingspan: 58,
+ 302:       wingChord: 9.8,
+ 303:       tailSpan: 20,
+ 304:       color: "#b1e6ff"
+ 305:     }),
+ 306:     "regional-jet": createFixedWingMesh(THREE, {
+ 307:       fuselageLength: 28,
+ 308:       fuselageRadius: 1.5,
+ 309:       wingspan: 24,
+ 310:       wingChord: 4.8,
+ 311:       tailSpan: 9,
+ 312:       color: "#79c4ff"
+ 313:     }),
+ 314:     bizjet: createFixedWingMesh(THREE, {
+ 315:       fuselageLength: 20,
+ 316:       fuselageRadius: 1.1,
+ 317:       wingspan: 18,
+ 318:       wingChord: 3.8,
+ 319:       tailSpan: 7,
+ 320:       color: "#ffd27f"
+ 321:     }),
+ 322:     prop: createPropMesh(THREE),
+ 323:     helicopter: createHelicopterMesh(THREE)
+ 324:   };
+ 325: }
+ 326: 
+ 327: function createFixedWingMesh(
+ 328:   THREE: ThreeModule,
+ 329:   options: {
+ 330:     fuselageLength: number;
+ 331:     fuselageRadius: number;
+ 332:     wingspan: number;
+ 333:     wingChord: number;
+ 334:     tailSpan: number;
+ 335:     color: string;
+ 336:   }
+ 337: ): import("three").Group {
+ 338:   const group = new THREE.Group();
+ 339:   const bodyMaterial = new THREE.MeshStandardMaterial({
+ 340:     color: options.color,
+ 341:     metalness: 0.18,
+ 342:     roughness: 0.54
+ 343:   });
+ 344:   const wingMaterial = new THREE.MeshStandardMaterial({
+ 345:     color: darkenColor(options.color, 0.84),
+ 346:     metalness: 0.12,
+ 347:     roughness: 0.62
+ 348:   });
+ 349: 
+ 350:   const fuselage = new THREE.Mesh(
+ 351:     new THREE.CylinderGeometry(options.fuselageRadius, options.fuselageRadius, options.fuselageLength, 12),
+ 352:     bodyMaterial
+ 353:   );
+ 354:   fuselage.name = "fuselage";
+ 355:   group.add(fuselage);
+ 356: 
+ 357:   const noseLength = options.fuselageRadius * 2.2;
+ 358:   const nose = new THREE.Mesh(new THREE.ConeGeometry(options.fuselageRadius, noseLength, 12), bodyMaterial);
+ 359:   nose.name = "nose";
+ 360:   nose.position.y = options.fuselageLength / 2 + noseLength / 2;
+ 361:   group.add(nose);
+ 362: 
+ 363:   const wings = new THREE.Mesh(
+ 364:     new THREE.BoxGeometry(options.wingspan, options.wingChord, 0.45),
+ 365:     wingMaterial
+ 366:   );
+ 367:   wings.name = "wings";
+ 368:   wings.position.y = -1;
+ 369:   wings.rotation.z = THREE.MathUtils.degToRad(3);
+ 370:   group.add(wings);
+ 371: 
+ 372:   const tailplane = new THREE.Mesh(new THREE.BoxGeometry(options.tailSpan, options.wingChord * 0.45, 0.28), wingMaterial);
+ 373:   tailplane.name = "tailplane";
+ 374:   tailplane.position.set(0, -options.fuselageLength / 2 + 4, 0.2);
+ 375:   group.add(tailplane);
+ 376: 
+ 377:   const tailFin = new THREE.Mesh(
+ 378:     new THREE.BoxGeometry(0.35, options.wingChord * 0.35, options.fuselageRadius * 3),
+ 379:     wingMaterial
+ 380:   );
+ 381:   tailFin.name = "tail-fin";
+ 382:   tailFin.position.set(0, -options.fuselageLength / 2 + 3.2, options.fuselageRadius * 1.4);
+ 383:   group.add(tailFin);
+ 384: 
+ 385:   return group;
+ 386: }
+ 387: 
+ 388: function createPropMesh(THREE: ThreeModule): import("three").Group {
+ 389:   const group = createFixedWingMesh(THREE, {
+ 390:     fuselageLength: 16,
+ 391:     fuselageRadius: 0.9,
+ 392:     wingspan: 17,
+ 393:     wingChord: 3.4,
+ 394:     tailSpan: 6.6,
+ 395:     color: "#9cffc7"
+ 396:   });
+ 397:   const propMaterial = new THREE.MeshStandardMaterial({
+ 398:     color: "#f7fafc",
+ 399:     metalness: 0.08,
+ 400:     roughness: 0.58
+ 401:   });
+ 402:   const propeller = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.22, 0.14), propMaterial);
+ 403:   propeller.position.set(0, 9.7, 0);
+ 404:   group.add(propeller);
+ 405:   return group;
+ 406: }
+ 407: 
+ 408: function createHelicopterMesh(THREE: ThreeModule): import("three").Group {
+ 409:   const group = new THREE.Group();
+ 410:   const bodyMaterial = new THREE.MeshStandardMaterial({
+ 411:     color: "#ffb49a",
+ 412:     metalness: 0.16,
+ 413:     roughness: 0.52
+ 414:   });
+ 415:   const detailMaterial = new THREE.MeshStandardMaterial({
+ 416:     color: "#5f6c80",
+ 417:     metalness: 0.12,
+ 418:     roughness: 0.7
+ 419:   });
+ 420: 
+ 421:   const cockpit = new THREE.Mesh(new THREE.SphereGeometry(2.4, 12, 12), bodyMaterial);
+ 422:   cockpit.scale.set(1.1, 1.9, 0.9);
+ 423:   cockpit.position.y = 1.2;
+ 424:   group.add(cockpit);
+ 425: 
+ 426:   const boom = new THREE.Mesh(new THREE.BoxGeometry(1, 12, 0.9), detailMaterial);
+ 427:   boom.position.y = -6.5;
+ 428:   group.add(boom);
+ 429: 
+ 430:   const skids = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.2, 0.2), detailMaterial);
+ 431:   skids.position.set(0, 0.2, -2.7);
+ 432:   group.add(skids);
+ 433: 
+ 434:   const skidStruts = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.2, 0.22), detailMaterial);
+ 435:   skidStruts.position.set(-2.2, 0.8, -1.4);
+ 436:   group.add(skidStruts);
+ 437:   const skidStrutsRight = skidStruts.clone();
+ 438:   skidStrutsRight.position.x = 2.2;
+ 439:   group.add(skidStrutsRight);
+ 440: 
+ 441:   const rotor = new THREE.Mesh(new THREE.BoxGeometry(16, 0.18, 0.24), detailMaterial);
+ 442:   rotor.position.set(0, 1.6, 2.4);
+ 443:   group.add(rotor);
+ 444: 
+ 445:   const rotorCross = new THREE.Mesh(new THREE.BoxGeometry(0.24, 16, 0.18), detailMaterial);
+ 446:   rotorCross.position.copy(rotor.position);
+ 447:   group.add(rotorCross);
+ 448: 
+ 449:   const tailRotor = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.2, 0.16), detailMaterial);
+ 450:   tailRotor.position.set(0, -12.4, 0);
+ 451:   group.add(tailRotor);
+ 452: 
+ 453:   const tailRotorCross = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 0.16), detailMaterial);
+ 454:   tailRotorCross.position.copy(tailRotor.position);
+ 455:   group.add(tailRotorCross);
+ 456: 
+ 457:   return group;
+ 458: }
+ 459: 
+ 460: function addAircraftLights(THREE: ThreeModule, scene: import("three").Scene): void {
+ 461:   scene.add(new THREE.AmbientLight(0xffffff, 1.15));
+ 462: 
+ 463:   const sunLight = new THREE.DirectionalLight(0xffffff, 1.45);
+ 464:   sunLight.position.set(0.5, 0.9, 1.8);
+ 465:   scene.add(sunLight);
+ 466: 
+ 467:   const fillLight = new THREE.DirectionalLight(0x9cd6ff, 0.35);
+ 468:   fillLight.position.set(-0.4, -1.2, 0.8);
+ 469:   scene.add(fillLight);
+ 470: }
+ 471: 
+ 472: function getAircraftModelMatrixScratch(THREE: ThreeModule): AircraftModelMatrixScratch {
+ 473:   const cached = aircraftModelMatrixScratch.get(THREE as object);
+ 474:   if (cached) {
+ 475:     return cached;
+ 476:   }
+ 477: 
+ 478:   const created = {
+ 479:     heading: new THREE.Matrix4(),
+ 480:     scale: new THREE.Matrix4()
+ 481:   };
+ 482:   aircraftModelMatrixScratch.set(THREE as object, created);
+ 483:   return created;
+ 484: }
+ 485: 
+ 486: function applyAircraftModelMatrix(
+ 487:   THREE: ThreeModule,
+ 488:   target: import("three").Matrix4,
+ 489:   track: RenderableAircraft3dTrack
+ 490: ): void {
+ 491:   const mercatorPosition = MercatorCoordinate.fromLngLat([track.lng, track.lat], track.altitudeMeters);
+ 492:   const mercatorScale = mercatorPosition.meterInMercatorCoordinateUnits();
+ 493:   const scratch = getAircraftModelMatrixScratch(THREE);
+ 494: 
+ 495:   // Local aircraft meshes use +Y nose-forward and +Z up; negative Mercator Y keeps heading 0 pointing north.
+ 496:   target
+ 497:     .makeTranslation(mercatorPosition.x, mercatorPosition.y, mercatorPosition.z)
+ 498:     .multiply(scratch.heading.makeRotationZ(THREE.MathUtils.degToRad(track.heading ?? 0)))
+ 499:     .multiply(scratch.scale.makeScale(mercatorScale, -mercatorScale, mercatorScale));
+ 500: }
+ 501: 
+ 502: function darkenColor(hexColor: string, factor: number): string {
+ 503:   const color = Number.parseInt(hexColor.replace("#", ""), 16);
+ 504:   const red = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
+ 505:   const green = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
+ 506:   const blue = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
+ 507:   return `#${[red, green, blue].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+ 508: }
+ 509: 
+ 510: function disposePrototypes(THREE: ThreeModule, prototypes: AircraftMeshPrototypeMap): void {
+ 511:   const geometries = new Set<import("three").BufferGeometry>();
+ 512:   const materials = new Set<import("three").Material>();
+ 513: 
+ 514:   for (const prototype of Object.values(prototypes)) {
+ 515:     prototype.traverse((child: import("three").Object3D) => {
+ 516:       const mesh = child as import("three").Mesh;
+ 517:       if (mesh.geometry instanceof THREE.BufferGeometry) {
+ 518:         geometries.add(mesh.geometry);
+ 519:       }
+ 520: 
+ 521:       if (Array.isArray(mesh.material)) {
+ 522:         mesh.material.forEach((material: import("three").Material) => materials.add(material));
+ 523:       } else if (mesh.material instanceof THREE.Material) {
+ 524:         materials.add(mesh.material);
+ 525:       }
+ 526:     });
+ 527:   }
+ 528: 
+ 529:   geometries.forEach((geometry) => geometry.dispose());
+ 530:   materials.forEach((material) => material.dispose());
+ 531: }
+ 532: 
+ 533: function sameTrackIdSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+ 534:   if (left.size !== right.size) {
+ 535:     return false;
+ 536:   }
+ 537: 
+ 538:   for (const value of left) {
+ 539:     if (!right.has(value)) {
+ 540:       return false;
+ 541:     }
+ 542:   }
+ 543: 
+ 544:   return true;
+ 545: }
+ 546: 
+ 547: export const aircraft3dLayerTestUtils = {
+ 548:   applyAircraftModelMatrix,
+ 549:   createAircraftMeshPrototypes,
+ 550:   syncAircraftObjects
+ 551: };
+
+=== src/traffic/aircraft3dLayer.test.ts ===
+   1: import { afterEach, describe, expect, it, vi } from "vitest";
+   2: import * as THREE from "three";
+   3: 
+   4: import type { RenderableAircraft3dTrack } from "./aircraft3d";
+   5: import { Aircraft3dController, aircraft3dLayerTestUtils } from "./aircraft3dLayer";
+   6: import type { LiveTrack } from "./trafficTypes";
+   7: 
+   8: function makeTrack(overrides: Partial<LiveTrack> = {}): LiveTrack {
+   9:   return {
+  10:     id: "abc123",
+  11:     kind: "aircraft",
+  12:     lng: -3.2,
+  13:     lat: 55.9,
+  14:     heading: 90,
+  15:     speedKnots: 250,
+  16:     altitudeMeters: 10000,
+  17:     label: "BAW123",
+  18:     source: "opensky",
+  19:     updatedAt: 1000000,
+  20:     ...overrides
+  21:   };
+  22: }
+  23: 
+  24: function makeMap() {
+  25:   const listeners = new Map<string, () => void>();
+  26:   return {
+  27:     listeners,
+  28:     on: vi.fn((event: string, handler: () => void) => {
+  29:       listeners.set(event, handler);
+  30:     }),
+  31:     off: vi.fn((event: string, handler: () => void) => {
+  32:       if (listeners.get(event) === handler) {
+  33:         listeners.delete(event);
+  34:       }
+  35:     }),
+  36:     getBounds: vi.fn(() => ({
+  37:       getWest: () => -4,
+  38:       getSouth: () => 55,
+  39:       getEast: () => -3,
+  40:       getNorth: () => 56
+  41:     })),
+  42:     getZoom: vi.fn(() => 11),
+  43:     getPitch: vi.fn(() => 50),
+  44:     getLayer: vi.fn(() => null),
+  45:     addLayer: vi.fn(),
+  46:     removeLayer: vi.fn(),
+  47:     triggerRepaint: vi.fn(),
+  48:     getCanvas: vi.fn(() => ({}))
+  49:   };
+  50: }
+  51: 
+  52: async function flushAllFrames(queue: Array<(time: number) => void>): Promise<void> {
+  53:   while (queue.length > 0) {
+  54:     const callback = queue.shift();
+  55:     callback?.(0);
+  56:     await Promise.resolve();
+  57:     await Promise.resolve();
+  58:   }
+  59: }
+  60: 
+  61: describe("Aircraft3dController", () => {
+  62:   afterEach(() => {
+  63:     vi.restoreAllMocks();
+  64:     vi.unstubAllGlobals();
+  65:   });
+  66: 
+  67:   it("warns once and stops retrying when three.js fails to load", async () => {
+  68:     const frameQueue: Array<(time: number) => void> = [];
+  69:     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: (time: number) => void) => {
+  70:       frameQueue.push(callback);
+  71:       return frameQueue.length;
+  72:     }));
+  73:     vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  74: 
+  75:     const map = makeMap();
+  76:     const onVisibilityChange = vi.fn();
+  77:     const loadThree = vi.fn(() => Promise.reject(new Error("load failed")));
+  78:     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  79:     const controller = new Aircraft3dController(map as any, onVisibilityChange, loadThree);
+  80: 
+  81:     controller.setTracks([makeTrack({ geoAltitudeMeters: 10400 })]);
+  82:     await flushAllFrames(frameQueue);
+  83: 
+  84:     expect(loadThree).toHaveBeenCalledTimes(1);
+  85:     expect(warnSpy).toHaveBeenCalledTimes(1);
+  86:     expect(map.addLayer).not.toHaveBeenCalled();
+  87:     expect(onVisibilityChange).not.toHaveBeenCalled();
+  88:     expect([...controller.getHiddenTrackIds()]).toEqual([]);
+  89: 
+  90:     map.listeners.get("move")?.();
+  91:     controller.setTracks([makeTrack({ id: "next", geoAltitudeMeters: 9800 })]);
+  92:     await flushAllFrames(frameQueue);
+  93: 
+  94:     expect(loadThree).toHaveBeenCalledTimes(1);
+  95:     expect(warnSpy).toHaveBeenCalledTimes(1);
+  96:     expect([...controller.getHiddenTrackIds()]).toEqual([]);
+  97: 
+  98:     controller.dispose();
+  99:   });
+ 100: });
+ 101: 
+ 102: describe("aircraft3dLayerTestUtils", () => {
+ 103:   it("keeps fixed-wing fuselage and nose aligned on the forward axis", () => {
+ 104:     const prototypes = aircraft3dLayerTestUtils.createAircraftMeshPrototypes(THREE);
+ 105:     const narrowBody = prototypes["narrow-body"];
+ 106:     const fuselage = narrowBody.getObjectByName("fuselage") as THREE.Mesh | undefined;
+ 107:     const nose = narrowBody.getObjectByName("nose") as THREE.Mesh | undefined;
+ 108:     const tailplane = narrowBody.getObjectByName("tailplane") as THREE.Mesh | undefined;
+ 109:     const tailFin = narrowBody.getObjectByName("tail-fin") as THREE.Mesh | undefined;
+ 110: 
+ 111:     expect(fuselage).toBeTruthy();
+ 112:     expect(nose).toBeTruthy();
+ 113:     expect(tailplane).toBeTruthy();
+ 114:     expect(tailFin).toBeTruthy();
+ 115:     expect(fuselage?.rotation.z ?? Number.NaN).toBeCloseTo(0);
+ 116:     expect(nose?.rotation.z ?? Number.NaN).toBeCloseTo(0);
+ 117:     expect(nose?.position.x ?? Number.NaN).toBeCloseTo(0);
+ 118:     expect(nose?.position.y ?? Number.NaN).toBeGreaterThan(0);
+ 119:     expect(tailplane?.position.y ?? Number.NaN).toBeLessThan(0);
+ 120:     expect(tailFin?.position.y ?? Number.NaN).toBeLessThan(0);
+ 121:   });
+ 122: 
+ 123:   it("replaces an existing mesh when the track class changes", () => {
+ 124:     const prototypes = aircraft3dLayerTestUtils.createAircraftMeshPrototypes(THREE);
+ 125:     const scene = new THREE.Scene();
+ 126:     const objects = new Map<string, THREE.Group>();
+ 127:     const track: RenderableAircraft3dTrack = {
+ 128:       id: "abc123",
+ 129:       lng: -3.2,
+ 130:       lat: 55.9,
+ 131:       heading: 90,
+ 132:       altitudeMeters: 10000,
+ 133:       classKey: "narrow-body"
+ 134:     };
+ 135: 
+ 136:     aircraft3dLayerTestUtils.syncAircraftObjects(scene, objects, prototypes, [track]);
+ 137:     const firstInstance = objects.get(track.id);
+ 138: 
+ 139:     aircraft3dLayerTestUtils.syncAircraftObjects(scene, objects, prototypes, [{ ...track, classKey: "wide-body" }]);
+ 140:     const secondInstance = objects.get(track.id);
+ 141: 
+ 142:     expect(firstInstance).toBeTruthy();
+ 143:     expect(secondInstance).toBeTruthy();
+ 144:     expect(secondInstance).not.toBe(firstInstance);
+ 145:     expect(scene.children).toContain(secondInstance);
+ 146:     expect(scene.children).not.toContain(firstInstance);
+ 147:     expect(secondInstance?.userData.aircraftClassKey).toBe("wide-body");
+ 148:   });
+ 149: 
+ 150:   it("maps local forward movement onto the requested world heading", () => {
+ 151:     const matrix = new THREE.Matrix4();
+ 152:     const track: RenderableAircraft3dTrack = {
+ 153:       id: "abc123",
+ 154:       lng: -3.2,
+ 155:       lat: 55.9,
+ 156:       heading: 90,
+ 157:       altitudeMeters: 10000,
+ 158:       classKey: "narrow-body"
+ 159:     };
+ 160:     const origin = new THREE.Vector3(0, 0, 0);
+ 161:     const forward = new THREE.Vector3(0, 1, 0);
+ 162: 
+ 163:     aircraft3dLayerTestUtils.applyAircraftModelMatrix(THREE, matrix, track);
+ 164: 
+ 165:     origin.applyMatrix4(matrix);
+ 166:     forward.applyMatrix4(matrix).sub(origin);
+ 167: 
+ 168:     expect(forward.x).toBeGreaterThan(0);
+ 169:     expect(Math.abs(forward.y)).toBeLessThan(forward.x * 0.01);
+ 170:     expect(Math.abs(forward.z)).toBeLessThan(forward.x * 0.01);
+ 171:   });
+ 172: });
