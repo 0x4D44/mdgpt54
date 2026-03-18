@@ -46,7 +46,7 @@ test.describe("Telemetry Metrics", () => {
     // Terrain is enabled by default. Mock tiles provide no elevation data,
     // so queryTerrainElevation returns null → formatElevation returns "--".
     const terrain = page.locator("#metric-terrain");
-    await expect(terrain).not.toHaveText("Off");
+    await expect(terrain).toHaveText("--");
   });
 
   test("terrain metric shows 'Off' after toggling terrain off", async ({ page }) => {

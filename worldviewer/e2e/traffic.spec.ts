@@ -45,7 +45,6 @@ test.describe("Traffic System", () => {
     await expect(toggle).toHaveClass(/is-active/);
 
     // Wait for mock OpenSky data to be served
-    await page.waitForFunction(() => true, null, { timeout: 5_000 });
     await expect(() => expect(openskyServed).toBe(true)).toPass({ timeout: 5_000 });
 
     // Toggle OFF
@@ -81,6 +80,23 @@ test.describe("Traffic System", () => {
     await expect(toggle).not.toHaveClass(/is-active/);
 
     relay.close();
+  });
+
+  test("connection status updates on ship WebSocket connect/disconnect", async ({ page }) => {
+    const relay = await mockShipRelay(page);
+    const shipsToggle = page.locator('[data-traffic-toggle="ships"]');
+    const status = page.locator("#traffic-status");
+
+    // Start: Off
+    await expect(status).toHaveText("Off");
+
+    // Toggle ships ON — status should transition away from "Off"
+    await shipsToggle.click();
+    await expect(status).not.toHaveText("Off");
+
+    // Close the WebSocket — status should show a non-live state
+    relay.close();
+    await expect(status).toHaveText(/Reconnecting|Off|Static Only/);
   });
 
   test("both toggles off shows disconnected/off status", async ({ page }) => {

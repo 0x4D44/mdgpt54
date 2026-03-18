@@ -85,4 +85,25 @@ test.describe("Scene Toggle Chips", () => {
     await nightChip.click();
     await expect(scrubber).toBeVisible();
   });
+
+  test("toggling night off resets time scrubber to live", async ({ page }) => {
+    const nightChip = page.locator('[data-toggle="night"]');
+    const slider = page.locator("#time-slider");
+
+    // Drag slider to midnight (value=0) to simulate a non-live position
+    await slider.evaluate((el: HTMLInputElement) => {
+      el.value = "0";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const before = await slider.inputValue();
+    expect(before).toBe("0");
+
+    // Turn night OFF → resets to live internally
+    await nightChip.click();
+
+    // Turn night back ON → slider should reflect current time, not midnight
+    await nightChip.click();
+    const after = Number(await slider.inputValue());
+    expect(after).toBeGreaterThan(0);
+  });
 });
