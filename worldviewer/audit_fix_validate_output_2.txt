@@ -1,8 +1,0 @@
-Validation passed without retries.
-
-- `npx vitest run src/traffic/trafficHelpers.test.ts src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts`: passed, 3 files / 64 tests.
-- `npm test`: passed, 17 files / 156 tests.
-- `npm run build`: passed. `tsc --noEmit` and Vite production build both completed successfully.
-
-Warnings:
-- Vite reported oversized chunks after minification. Two output chunks were above the 500 kB warning threshold, roughly `725 kB` and `1.14 MB` before gzip. This did not fail the build, but it is a real bundle-size warning.

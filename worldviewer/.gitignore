@@ -1,3 +1,12 @@
 dist/
 node_modules/
 tmp/
+coverage/
+/.codex-temp-*
+/tmp_*
+/aircraft_feature_audit*
+/audit_fix_validate*
+/final_audit_validate*
+/stage*.txt
+/stage*.patch
+/claude_*

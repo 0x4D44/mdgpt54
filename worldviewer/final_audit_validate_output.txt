@@ -1,9 +1,0 @@
-Validation completed without editing files or committing.
-
-- `npx vitest run scripts/generateAircraftIdentity.test.ts src/traffic/trafficHelpers.test.ts src/traffic/aircraft3d.test.ts src/traffic/aircraft3dLayer.test.ts`: passed, `4/4` files and `69/69` tests.
-- `npm test`: passed, `17/17` files and `156/156` tests.
-- `npm run build`: passed, `tsc --noEmit` and Vite production build both succeeded.
-
-Warnings:
-- Vite reported oversized chunks after minification: `assets/three.module-CpB-wl7P.js` at `725.22 kB` and `assets/index-CGLtHD-p.js` at `1,138.09 kB`.
-- Initial direct `mdtimeout ... npx ...` launches failed because `npx` resolves to `npx.ps1` on this machine; I retried once for launch noise, then ran the commands through `powershell -Command` to get the authoritative results above.
