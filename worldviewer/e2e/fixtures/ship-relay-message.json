@@ -1,0 +1,23 @@
+{
+  "type": "snapshot",
+  "ships": [
+    {
+      "id": "211234567",
+      "kind": "ship",
+      "lat": 51.5,
+      "lng": -0.1,
+      "heading": 125,
+      "speedKnots": 12.5,
+      "altitudeMeters": null,
+      "label": "MOCK VESSEL",
+      "source": "aisstream",
+      "updatedAt": 1710720000
+    }
+  ],
+  "aircraft": [],
+  "serverTime": 1710720000,
+  "status": {
+    "ships": { "code": "ok", "message": null },
+    "aircraft": { "code": "ok", "message": null }
+  }
+}

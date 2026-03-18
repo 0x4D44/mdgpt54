@@ -1,0 +1,40 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-1.2577, 51.752]
+      },
+      "properties": {
+        "geocoding": {
+          "label": "Oxford, Oxfordshire, England",
+          "type": "city",
+          "city": "Oxford",
+          "county": "Oxfordshire",
+          "state": "England",
+          "country": "United Kingdom"
+        }
+      },
+      "bbox": [-1.3262, 51.7076, -1.1874, 51.7967]
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-84.0553, 39.509]
+      },
+      "properties": {
+        "geocoding": {
+          "label": "Oxford, Butler County, Ohio",
+          "type": "city",
+          "city": "Oxford",
+          "county": "Butler County",
+          "state": "Ohio",
+          "country": "United States"
+        }
+      }
+    }
+  ]
+}
