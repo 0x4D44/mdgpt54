@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.7.1",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "concurrently -k -n web,relay -c cyan,yellow \"vite\" \"tsx server/trafficRelay.ts\"",
     "dev:web": "vite",

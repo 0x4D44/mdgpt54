@@ -9,7 +9,15 @@ npm install
 npm run dev
 ```
 
-`npm run dev` now starts both Vite and the local traffic relay. If you only want the frontend dev server, use `npm run dev:web`.
+`npm run dev` now starts both Vite and the ships-only local traffic relay. If you only want the frontend dev server, use `npm run dev:web`.
+
+## Validate
+
+```powershell
+npm run check
+```
+
+`npm run check` is the routine whole-repo validation path. It runs the client, scripts, and server TypeScript checks, then the Vitest suite. If you only need the browser app typecheck, use `npm run check:client`.
 
 ## Aircraft Metadata Refresh
 
