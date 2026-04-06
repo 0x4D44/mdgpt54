@@ -10,3 +10,4 @@ coverage/
 /stage*.txt
 /stage*.patch
 /claude_*
+test-results/
