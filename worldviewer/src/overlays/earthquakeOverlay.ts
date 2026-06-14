@@ -1,8 +1,9 @@
 import type { Map, CircleLayerSpecification } from "maplibre-gl";
 import { Popup } from "maplibre-gl";
 import { escapeHtml } from "../escapeHtml";
-import { isAbortError, isObject } from "../guards";
+import { isObject } from "../guards";
 
+import { createPollingOverlay } from "./createPollingOverlay";
 import {
   findFirstLabelLayerId,
   findFirstNonBaseContentLayerId,
@@ -150,52 +151,10 @@ export function createEarthquakeOverlay(options: EarthquakeOverlayOptions = {}) 
   const fetchImpl = options.fetchImpl ?? (fetch as EarthquakeFetch);
   const updateIntervalMs = options.updateIntervalMs ?? EARTHQUAKE_REFRESH_INTERVAL_MS;
   const onStateChange = options.onStateChange ?? (() => undefined);
-  let currentMap: Map | null = null;
-  let loadHandler: (() => void) | null = null;
-  let loadHandlerMap: Map | null = null;
-  let timer: ReturnType<typeof globalThis.setInterval> | null = null;
-  let activeRequest: AbortController | null = null;
-  let enabled = false;
-  let revision = 0;
-  let refreshRevision = 0;
-  let presentation = INACTIVE_PRESENTATION;
   let earthquakePopup: Popup | null = null;
   let clickHandler: ((e: maplibregl.MapMouseEvent) => void) | null = null;
   let mouseEnterHandler: (() => void) | null = null;
   let mouseLeaveHandler: (() => void) | null = null;
-
-  const publish = (nextPresentation: EarthquakePresentation) => {
-    if (
-      presentation.note === nextPresentation.note &&
-      presentation.creditLabel === nextPresentation.creditLabel
-    ) {
-      return;
-    }
-
-    presentation = nextPresentation;
-    onStateChange(nextPresentation);
-  };
-
-  const clearLoadHandler = () => {
-    if (loadHandler && loadHandlerMap) {
-      loadHandlerMap.off("load", loadHandler);
-    }
-
-    loadHandler = null;
-    loadHandlerMap = null;
-  };
-
-  const clearTimer = () => {
-    if (timer !== null) {
-      globalThis.clearInterval(timer);
-      timer = null;
-    }
-  };
-
-  const abortFetch = () => {
-    activeRequest?.abort();
-    activeRequest = null;
-  };
 
   const clearPopup = () => {
     earthquakePopup?.remove();
@@ -228,12 +187,6 @@ export function createEarthquakeOverlay(options: EarthquakeOverlayOptions = {}) 
       map.removeSource(EARTHQUAKE_SOURCE_ID);
     }
   };
-
-  const isCurrent = (map: Map, token: number) =>
-    enabled && currentMap === map && revision === token;
-
-  const isCurrentRefresh = (map: Map, token: number, refreshToken: number) =>
-    isCurrent(map, token) && refreshRevision === refreshToken;
 
   const wirePopupHandler = (map: Map) => {
     removeClickHandler(map);
@@ -302,120 +255,28 @@ export function createEarthquakeOverlay(options: EarthquakeOverlayOptions = {}) 
     }
   };
 
-  const refresh = async (map: Map, token: number) => {
-    const refreshToken = ++refreshRevision;
-    abortFetch();
-    const controller = new AbortController();
-    activeRequest = controller;
-
-    try {
-      const response = await fetchImpl(EARTHQUAKE_API_URL, {
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        throw new Error(`USGS earthquake request failed with ${response.status}.`);
-      }
-
-      const raw = await response.json();
-      if (!isCurrentRefresh(map, token, refreshToken)) {
-        return;
-      }
-
+  return createPollingOverlay<GeoJSON.FeatureCollection, EarthquakePresentation>({
+    url: EARTHQUAKE_API_URL,
+    fetchImpl,
+    refreshIntervalMs: updateIntervalMs,
+    requestErrorMessage: (status) => `USGS earthquake request failed with ${status}.`,
+    parse: (raw) => {
       const fc = normalizeEarthquakeFeatures(raw);
-      if (fc.features.length === 0) {
-        removeOverlay(map);
-        publish(UNAVAILABLE_PRESENTATION);
-        return;
-      }
-
-      syncSourceAndLayer(map, fc);
-      publish({
+      return fc.features.length === 0 ? null : fc;
+    },
+    syncSourceAndLayer: ({ map, parsed }) => syncSourceAndLayer(map, parsed),
+    removeOverlay,
+    presentation: {
+      inactive: INACTIVE_PRESENTATION,
+      unavailable: UNAVAILABLE_PRESENTATION,
+      active: (fc) => ({
         note: formatEarthquakeStatus(fc.features.length),
         creditLabel: EARTHQUAKE_CREDIT_LABEL
-      });
-    } catch (error) {
-      if (isAbortError(error) || !isCurrentRefresh(map, token, refreshToken)) {
-        return;
-      }
-
-      removeOverlay(map);
-      publish(UNAVAILABLE_PRESENTATION);
-    } finally {
-      if (activeRequest === controller) {
-        activeRequest = null;
-      }
+      }),
+      equals: (a, b) => a.note === b.note && a.creditLabel === b.creditLabel,
+      onStateChange
     }
-  };
-
-  const startTimer = (map: Map, token: number) => {
-    clearTimer();
-    timer = globalThis.setInterval(() => {
-      if (!isCurrent(map, token)) {
-        return;
-      }
-
-      void refresh(map, token);
-    }, updateIntervalMs);
-  };
-
-  const enable = (map: Map) => {
-    if (enabled && currentMap === map) {
-      return;
-    }
-
-    if (enabled && currentMap && currentMap !== map) {
-      removeOverlay(currentMap);
-    }
-
-    enabled = true;
-    currentMap = map;
-    revision += 1;
-    const token = revision;
-    clearLoadHandler();
-    clearTimer();
-    abortFetch();
-    publish(INACTIVE_PRESENTATION);
-
-    const apply = () => {
-      if (!isCurrent(map, token)) {
-        return;
-      }
-
-      clearLoadHandler();
-      startTimer(map, token);
-      void refresh(map, token);
-    };
-
-    if (map.isStyleLoaded()) {
-      apply();
-      return;
-    }
-
-    loadHandler = () => {
-      apply();
-    };
-    loadHandlerMap = map;
-    map.on("load", loadHandler);
-  };
-
-  const disable = (map: Map) => {
-    revision += 1;
-    enabled = false;
-    clearTimer();
-    clearLoadHandler();
-    abortFetch();
-    publish(INACTIVE_PRESENTATION);
-
-    const mapToClear = currentMap ?? map;
-    removeOverlay(mapToClear);
-    currentMap = null;
-  };
-
-  return {
-    enable,
-    disable
-  };
+  });
 }
 
 function createEarthquakeLayer(): CircleLayerSpecification {

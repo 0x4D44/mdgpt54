@@ -1,6 +1,7 @@
 import type { Map, RasterLayerSpecification } from "maplibre-gl";
 
-import { isAbortError, isObject } from "../guards";
+import { isObject } from "../guards";
+import { createPollingOverlay } from "./createPollingOverlay";
 import {
   findFirstLabelLayerId,
   findFirstNonBaseContentLayerId,
@@ -137,49 +138,7 @@ export function createWeatherRadarOverlay(options: WeatherRadarOverlayOptions = 
   const fetchImpl = options.fetchImpl ?? (fetch as WeatherRadarFetch);
   const updateIntervalMs = options.updateIntervalMs ?? WEATHER_RADAR_REFRESH_INTERVAL_MS;
   const onStateChange = options.onStateChange ?? (() => undefined);
-  let currentMap: Map | null = null;
-  let loadHandler: (() => void) | null = null;
-  let loadHandlerMap: Map | null = null;
-  let timer: ReturnType<typeof globalThis.setInterval> | null = null;
-  let activeRequest: AbortController | null = null;
   let currentTileUrl: string | null = null;
-  let enabled = false;
-  let revision = 0;
-  let refreshRevision = 0;
-  let presentation = INACTIVE_PRESENTATION;
-
-  const publish = (nextPresentation: WeatherRadarPresentation) => {
-    if (
-      presentation.note === nextPresentation.note &&
-      presentation.creditLabel === nextPresentation.creditLabel
-    ) {
-      return;
-    }
-
-    presentation = nextPresentation;
-    onStateChange(nextPresentation);
-  };
-
-  const clearLoadHandler = () => {
-    if (loadHandler && loadHandlerMap) {
-      loadHandlerMap.off("load", loadHandler);
-    }
-
-    loadHandler = null;
-    loadHandlerMap = null;
-  };
-
-  const clearTimer = () => {
-    if (timer !== null) {
-      globalThis.clearInterval(timer);
-      timer = null;
-    }
-  };
-
-  const abortFetch = () => {
-    activeRequest?.abort();
-    activeRequest = null;
-  };
 
   const removeOverlay = (map: Map) => {
     currentTileUrl = null;
@@ -191,12 +150,6 @@ export function createWeatherRadarOverlay(options: WeatherRadarOverlayOptions = 
       map.removeSource(WEATHER_RADAR_SOURCE_ID);
     }
   };
-
-  const isCurrent = (map: Map, token: number) =>
-    enabled && currentMap === map && revision === token;
-
-  const isCurrentRefresh = (map: Map, token: number, refreshToken: number) =>
-    isCurrent(map, token) && refreshRevision === refreshToken;
 
   const needsReassertion = (map: Map) =>
     !map.getSource(WEATHER_RADAR_SOURCE_ID) || !map.getLayer(WEATHER_RADAR_LAYER_ID);
@@ -234,126 +187,32 @@ export function createWeatherRadarOverlay(options: WeatherRadarOverlayOptions = 
     currentTileUrl = tileUrl;
   };
 
-  const refresh = async (map: Map, token: number) => {
-    const refreshToken = ++refreshRevision;
-    abortFetch();
-    const controller = new AbortController();
-    activeRequest = controller;
-
-    try {
-      const response = await fetchImpl(WEATHER_RADAR_METADATA_URL, {
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        throw new Error(`RainViewer metadata request failed with ${response.status}.`);
-      }
-
-      const frame = parseLatestWeatherRadarFrame(await response.json());
-      if (!isCurrentRefresh(map, token, refreshToken)) {
-        return;
-      }
-
-      if (!frame) {
-        removeOverlay(map);
-        publish(UNAVAILABLE_PRESENTATION);
-        return;
-      }
-
-      syncSourceAndLayer(map, buildWeatherRadarTileUrl(frame.host, frame.path));
-      publish({
-        note: formatWeatherRadarStatus(frame.time),
-        creditLabel: WEATHER_RADAR_CREDIT_LABEL
-      });
-    } catch (error) {
-      if (isAbortError(error) || !isCurrentRefresh(map, token, refreshToken)) {
-        return;
-      }
-
-      removeOverlay(map);
-      publish(UNAVAILABLE_PRESENTATION);
-    } finally {
-      if (activeRequest === controller) {
-        activeRequest = null;
-      }
-    }
-  };
-
-  const startTimer = (map: Map, token: number) => {
-    clearTimer();
-    timer = globalThis.setInterval(() => {
-      if (!isCurrent(map, token)) {
-        return;
-      }
-
-      void refresh(map, token);
-    }, updateIntervalMs);
-  };
-
-  const enable = (map: Map) => {
-    const reassertCurrentMap = enabled && currentMap === map && currentTileUrl !== null && needsReassertion(map);
-
-    if (enabled && currentMap === map && !reassertCurrentMap) {
-      return;
-    }
-
-    if (enabled && currentMap && currentMap !== map) {
-      removeOverlay(currentMap);
-    }
-
-    enabled = true;
-    currentMap = map;
-    revision += 1;
-    const token = revision;
-    clearLoadHandler();
-    clearTimer();
-    abortFetch();
-    if (!reassertCurrentMap) {
-      publish(INACTIVE_PRESENTATION);
-    }
-
-    const apply = () => {
-      if (!isCurrent(map, token)) {
-        return;
-      }
-
-      clearLoadHandler();
+  return createPollingOverlay<WeatherRadarFrame, WeatherRadarPresentation>({
+    url: WEATHER_RADAR_METADATA_URL,
+    fetchImpl,
+    refreshIntervalMs: updateIntervalMs,
+    requestErrorMessage: (status) => `RainViewer metadata request failed with ${status}.`,
+    parse: (raw) => parseLatestWeatherRadarFrame(raw),
+    syncSourceAndLayer: ({ map, parsed }) =>
+      syncSourceAndLayer(map, buildWeatherRadarTileUrl(parsed.host, parsed.path)),
+    removeOverlay,
+    shouldReassertOnEnable: (map) => currentTileUrl !== null && needsReassertion(map),
+    reassert: (map) => {
       if (currentTileUrl && needsReassertion(map)) {
         syncSourceAndLayer(map, currentTileUrl);
       }
-      startTimer(map, token);
-      void refresh(map, token);
-    };
-
-    if (map.isStyleLoaded()) {
-      apply();
-      return;
+    },
+    presentation: {
+      inactive: INACTIVE_PRESENTATION,
+      unavailable: UNAVAILABLE_PRESENTATION,
+      active: (frame) => ({
+        note: formatWeatherRadarStatus(frame.time),
+        creditLabel: WEATHER_RADAR_CREDIT_LABEL
+      }),
+      equals: (a, b) => a.note === b.note && a.creditLabel === b.creditLabel,
+      onStateChange
     }
-
-    loadHandler = () => {
-      apply();
-    };
-    loadHandlerMap = map;
-    map.on("load", loadHandler);
-  };
-
-  const disable = (map: Map) => {
-    revision += 1;
-    enabled = false;
-    clearTimer();
-    clearLoadHandler();
-    abortFetch();
-    publish(INACTIVE_PRESENTATION);
-
-    const mapToClear = currentMap ?? map;
-    removeOverlay(mapToClear);
-    currentMap = null;
-  };
-
-  return {
-    enable,
-    disable
-  };
+  });
 }
 
 function createWeatherRadarLayer(): RasterLayerSpecification {

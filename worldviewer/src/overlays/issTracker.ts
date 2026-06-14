@@ -1,6 +1,7 @@
 import type { Map, CircleLayerSpecification, LineLayerSpecification } from "maplibre-gl";
 
-import { isAbortError, isObject } from "../guards";
+import { isObject } from "../guards";
+import { createPollingOverlay } from "./createPollingOverlay";
 import {
   findFirstLabelLayerId,
   findFirstRoadLayerId,
@@ -149,44 +150,7 @@ export function createIssTrackerOverlay(options: IssTrackerOptions = {}) {
   const fetchImpl = options.fetchImpl ?? (fetch as IssFetch);
   const pollIntervalMs = options.pollIntervalMs ?? ISS_POLL_INTERVAL_MS;
   const onStateChange = options.onStateChange ?? (() => undefined);
-  let currentMap: Map | null = null;
-  let loadHandler: (() => void) | null = null;
-  let loadHandlerMap: Map | null = null;
-  let timer: ReturnType<typeof globalThis.setInterval> | null = null;
-  let activeRequest: AbortController | null = null;
-  let enabled = false;
-  let revision = 0;
-  let refreshRevision = 0;
-  let presentation = INACTIVE_PRESENTATION;
   const trail: IssPosition[] = [];
-
-  const publish = (nextPresentation: IssPresentation) => {
-    if (presentation.note === nextPresentation.note) {
-      return;
-    }
-    presentation = nextPresentation;
-    onStateChange(nextPresentation);
-  };
-
-  const clearLoadHandler = () => {
-    if (loadHandler && loadHandlerMap) {
-      loadHandlerMap.off("load", loadHandler);
-    }
-    loadHandler = null;
-    loadHandlerMap = null;
-  };
-
-  const clearTimer = () => {
-    if (timer !== null) {
-      globalThis.clearInterval(timer);
-      timer = null;
-    }
-  };
-
-  const abortFetch = () => {
-    activeRequest?.abort();
-    activeRequest = null;
-  };
 
   const removeOverlay = (map: Map) => {
     if (map.getLayer(ISS_ICON_LAYER_ID)) {
@@ -203,13 +167,15 @@ export function createIssTrackerOverlay(options: IssTrackerOptions = {}) {
     }
   };
 
-  const isCurrent = (map: Map, token: number) =>
-    enabled && currentMap === map && revision === token;
-
-  const isCurrentRefresh = (map: Map, token: number, refreshToken: number) =>
-    isCurrent(map, token) && refreshRevision === refreshToken;
-
   const syncSourcesAndLayers = (map: Map, position: IssPosition) => {
+    // Append to trail ring buffer. Runs only after the factory's
+    // isCurrentRefresh gate has passed, preserving the original ordering where
+    // the trail grew solely on current, successful refreshes.
+    trail.push(position);
+    if (trail.length > ISS_TRAIL_MAX_POINTS) {
+      trail.splice(0, trail.length - ISS_TRAIL_MAX_POINTS);
+    }
+
     const pointFC: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
       features: [buildIssFeature(position)]
@@ -262,121 +228,28 @@ export function createIssTrackerOverlay(options: IssTrackerOptions = {}) {
     }
   };
 
-  const refresh = async (map: Map, token: number) => {
-    const refreshToken = ++refreshRevision;
-    abortFetch();
-    const controller = new AbortController();
-    activeRequest = controller;
-
-    try {
-      const response = await fetchImpl(ISS_API_URL, {
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        throw new Error(`ISS API request failed with ${response.status}.`);
-      }
-
-      const raw = await response.json();
-      if (!isCurrentRefresh(map, token, refreshToken)) {
-        return;
-      }
-
-      const position = parseIssResponse(raw);
-      if (!position) {
-        removeOverlay(map);
-        publish(UNAVAILABLE_PRESENTATION);
-        return;
-      }
-
-      // Append to trail ring buffer
-      trail.push(position);
-      if (trail.length > ISS_TRAIL_MAX_POINTS) {
-        trail.splice(0, trail.length - ISS_TRAIL_MAX_POINTS);
-      }
-
-      syncSourcesAndLayers(map, position);
-      publish({ note: formatIssStatus(position) });
-    } catch (error) {
-      if (isAbortError(error) || !isCurrentRefresh(map, token, refreshToken)) {
-        return;
-      }
-
-      removeOverlay(map);
-      publish(UNAVAILABLE_PRESENTATION);
-    } finally {
-      if (activeRequest === controller) {
-        activeRequest = null;
-      }
+  return createPollingOverlay<IssPosition, IssPresentation>({
+    url: ISS_API_URL,
+    fetchImpl,
+    refreshIntervalMs: pollIntervalMs,
+    requestErrorMessage: (status) => `ISS API request failed with ${status}.`,
+    parse: (raw) => parseIssResponse(raw),
+    syncSourceAndLayer: ({ map, parsed }) => syncSourcesAndLayers(map, parsed),
+    removeOverlay,
+    onBeforeEnable: () => {
+      trail.length = 0;
+    },
+    onDisable: () => {
+      trail.length = 0;
+    },
+    presentation: {
+      inactive: INACTIVE_PRESENTATION,
+      unavailable: UNAVAILABLE_PRESENTATION,
+      active: (position) => ({ note: formatIssStatus(position) }),
+      equals: (a, b) => a.note === b.note,
+      onStateChange
     }
-  };
-
-  const startTimer = (map: Map, token: number) => {
-    clearTimer();
-    timer = globalThis.setInterval(() => {
-      if (!isCurrent(map, token)) {
-        return;
-      }
-      void refresh(map, token);
-    }, pollIntervalMs);
-  };
-
-  const enable = (map: Map) => {
-    if (enabled && currentMap === map) {
-      return;
-    }
-
-    if (enabled && currentMap && currentMap !== map) {
-      removeOverlay(currentMap);
-    }
-
-    enabled = true;
-    currentMap = map;
-    revision += 1;
-    const token = revision;
-    clearLoadHandler();
-    clearTimer();
-    abortFetch();
-    trail.length = 0;
-    publish(INACTIVE_PRESENTATION);
-
-    const apply = () => {
-      if (!isCurrent(map, token)) {
-        return;
-      }
-
-      clearLoadHandler();
-      startTimer(map, token);
-      void refresh(map, token);
-    };
-
-    if (map.isStyleLoaded()) {
-      apply();
-      return;
-    }
-
-    loadHandler = () => {
-      apply();
-    };
-    loadHandlerMap = map;
-    map.on("load", loadHandler);
-  };
-
-  const disable = (map: Map) => {
-    revision += 1;
-    enabled = false;
-    clearTimer();
-    clearLoadHandler();
-    abortFetch();
-    trail.length = 0;
-    publish(INACTIVE_PRESENTATION);
-
-    const mapToClear = currentMap ?? map;
-    removeOverlay(mapToClear);
-    currentMap = null;
-  };
-
-  return { enable, disable };
+  });
 }
 
 function createIssIconLayer(): CircleLayerSpecification {
