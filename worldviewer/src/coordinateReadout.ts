@@ -6,10 +6,18 @@ export type CursorPosition = {
 
 const THROTTLE_MS = 100;
 
+/**
+ * Wrap a longitude into [-180, 180). MapLibre reports cursor longitudes outside
+ * that range after the globe is spun (e.g. 543.2), so wrap before display/copy.
+ */
+export function wrapLongitude(lng: number): number {
+  return ((((lng + 180) % 360) + 360) % 360) - 180;
+}
+
 /** Format a CursorPosition into the display string. */
 export function formatReadout(pos: CursorPosition): string {
   const lat = pos.lat.toFixed(4);
-  const lng = pos.lng.toFixed(4);
+  const lng = wrapLongitude(pos.lng).toFixed(4);
   if (pos.elevation !== null) {
     return `${lat}, ${lng} · ${Math.round(pos.elevation)} m`;
   }
@@ -18,7 +26,7 @@ export function formatReadout(pos: CursorPosition): string {
 
 /** Format coordinates for clipboard (no elevation). */
 export function formatForClipboard(lat: number, lng: number): string {
-  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  return `${lat.toFixed(4)}, ${wrapLongitude(lng).toFixed(4)}`;
 }
 
 /** Simple leading-edge throttle. Fires immediately, then suppresses for `ms`. */

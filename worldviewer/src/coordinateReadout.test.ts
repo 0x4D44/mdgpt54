@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatReadout,
   formatForClipboard,
+  wrapLongitude,
   throttle,
   createReadoutController,
   type CursorPosition
@@ -35,6 +36,11 @@ describe("coordinateReadout", () => {
       expect(formatReadout(pos)).toBe("55.9534, -3.1883");
     });
 
+    it("wraps longitude into [-180, 180) after the globe is spun", () => {
+      const pos: CursorPosition = { lat: 51.5, lng: 543.2, elevation: null };
+      expect(formatReadout(pos)).toBe("51.5000, -176.8000");
+    });
+
     it("rounds elevation to nearest integer", () => {
       const pos: CursorPosition = { lat: 10, lng: 20, elevation: 142.7 };
       expect(formatReadout(pos)).toBe("10.0000, 20.0000 · 143 m");
@@ -57,6 +63,24 @@ describe("coordinateReadout", () => {
 
     it("handles zero coordinates", () => {
       expect(formatForClipboard(0, 0)).toBe("0.0000, 0.0000");
+    });
+
+    it("wraps out-of-range longitude before copying", () => {
+      expect(formatForClipboard(51.5, 543.2)).toBe("51.5000, -176.8000");
+    });
+  });
+
+  describe("wrapLongitude", () => {
+    it("leaves in-range longitudes unchanged", () => {
+      expect(wrapLongitude(0)).toBe(0);
+      expect(wrapLongitude(-179.9)).toBeCloseTo(-179.9, 6);
+      expect(wrapLongitude(179.9)).toBeCloseTo(179.9, 6);
+    });
+
+    it("wraps values beyond +/-180", () => {
+      expect(wrapLongitude(543.2)).toBeCloseTo(-176.8, 6);
+      expect(wrapLongitude(-190)).toBeCloseTo(170, 6);
+      expect(wrapLongitude(360)).toBeCloseTo(0, 6);
     });
   });
 
