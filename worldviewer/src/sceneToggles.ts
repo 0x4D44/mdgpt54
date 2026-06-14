@@ -49,7 +49,12 @@ export interface ToggleDef {
   hashKey?: ToggleHashKey;
   /** Status-pill text for the given on/off state. */
   status(on: boolean): string;
-  /** Side-effect to run after the state has been flipped. */
+  /**
+   * Side-effect to run after the state has been flipped.
+   * INVARIANT: effects must NOT write the status pill — the caller assigns the
+   * toggle's `status` text after the effect, and that assignment must stay
+   * authoritative (the original wireToggles set status before the effect).
+   */
   effect(on: boolean, deps: ToggleEffectDeps): void;
 }
 

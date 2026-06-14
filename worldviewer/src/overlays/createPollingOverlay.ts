@@ -54,6 +54,11 @@ export type PollingOverlayConfig<TParsed, TPresentation> = {
    * Whether a same-map re-enable should reassert the overlay instead of being a
    * no-op. Combined with the factory's own `enabled && currentMap === map`.
    * Undefined is treated as always-false.
+   *
+   * Note: reassert only fires on the SAME-map re-enable path. The original
+   * weather overlay also reasserted on a cross-map enable, but no overlay is
+   * ever enabled on a second map (all are constructed once for the single map),
+   * so that path had no callers and is intentionally not carried over.
    */
   shouldReassertOnEnable?: (map: Map) => boolean;
   /** Reassert sources/layers during apply() when reasserting on enable. */
