@@ -7,15 +7,12 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "dev": "concurrently -k -n web,relay -c cyan,yellow \"vite\" \"tsx server/trafficRelay.ts\"",
-    "dev:web": "vite",
-    "dev:relay": "tsx server/trafficRelay.ts",
+    "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "check": "npm run check:types && npm run test",
-    "check:types": "npm run check:client && npm run check:scripts && npm run check:server",
+    "check:types": "npm run check:client && npm run check:scripts",
     "check:client": "tsc --noEmit",
     "check:scripts": "tsc --project scripts/tsconfig.json --noEmit",
-    "check:server": "tsc --project server/tsconfig.json --noEmit",
     "refresh:aircraft-identity": "tsx scripts/generateAircraftIdentity.ts",
     "test": "vitest run",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
@@ -25,15 +22,13 @@
   "dependencies": {
     "maplibre-contour": "^0.1.0",
     "maplibre-gl": "^5.20.0",
-    "three": "^0.183.2",
-    "ws": "^8.19.0"
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@types/node": "^22.10.0",
     "@types/three": "^0.183.1",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.0",
-    "concurrently": "^9.2.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",

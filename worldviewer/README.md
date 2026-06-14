@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` now starts both Vite and the ships-only local traffic relay. If you only want the frontend dev server, use `npm run dev:web`.
+`npm run dev` starts the Vite dev server.
 
 ## Validate
 
@@ -17,7 +17,7 @@ npm run dev
 npm run check
 ```
 
-`npm run check` is the routine whole-repo validation path. It runs the client, scripts, and server TypeScript checks, then the Vitest suite. If you only need the browser app typecheck, use `npm run check:client`.
+`npm run check` is the routine whole-repo validation path. It runs the client and scripts TypeScript checks, then the Vitest suite. If you only need the browser app typecheck, use `npm run check:client`.
 
 ## Aircraft Metadata Refresh
 
@@ -29,10 +29,6 @@ npm run refresh:aircraft-identity -- --input tmp/aircraft-database-complete-2025
 
 This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the first two hex characters of `icao24` (`00.json` .. `ff.json`), and logs each shard's raw and gzip size so the guardrails are visible before commit.
 
-## Configuration
-
-- `AISSTREAM_API_KEY`: optional, enables the live ship layer. If it is missing, aircraft still work and ships stay unavailable in the UI.
-
 ## Stack
 
 - MapLibre GL JS for globe rendering and camera control
@@ -42,13 +38,12 @@ This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the firs
 - OpenStreetMap Nominatim search for lightweight geocoding
 - OpenSky direct from the browser for live aircraft
 - OpenSky aircraft metadata snapshots for static aircraft identity shards
-- AISStream via the local relay for live ships
 
 ## Notes
 
 - This is the realistic open-data version of the feature. It reaches street-scale navigation with terrain, roads, labels, and extruded buildings, but it is not worldwide photogrammetry.
 - Live traffic is intended for personal, non-commercial use and depends on public community feeds. Coverage and freshness vary by region and provider.
-- GitHub Pages can host the static globe build and live aircraft, because live aircraft and static aircraft identity both come from OpenSky-compatible browser/static paths. Live ships still need a relay, so the ship toggle stays unavailable on the Pages build.
+- This build targets GitHub Pages: the static globe, live aircraft, and aircraft identity all come from OpenSky-compatible browser/static paths, so no server is required.
 - At higher zoom and pitch, airborne aircraft switch from 2D symbols to bounded 3D class models in the browser. This only activates when the visible airborne aircraft count stays low enough to keep the map responsive.
 - The external services above are public community/demo services. For sustained production traffic, swap them for self-hosted or contracted equivalents.
 
@@ -60,4 +55,3 @@ This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the firs
 - AWS Terrain Tiles / Terrarium
 - OpenStreetMap Nominatim
 - OpenSky Network for live aircraft state vectors and aircraft metadata snapshots
-- AISStream for live ship traffic
