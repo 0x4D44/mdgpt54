@@ -575,6 +575,32 @@ describe("renderSearchResults via button clicks", () => {
     expect(deps.statusPill.textContent).toBe("Flying to Paris...");
   });
 
+  it("falls back to flyTo for a dateline-spanning bbox (minLng > maxLng)", async () => {
+    stubFetchWith({
+      features: [nominatimFeature(179.5, 0, "Fiji", [178, -20, -178, 20])]
+    });
+    const { clickHandlers } = stubDocument();
+
+    const mapInstance = makeMap();
+    const deps = makeDeps({
+      searchInput: makeInput("Fiji"),
+      getMap: () => mapInstance as any
+    });
+    wireSearch(deps);
+
+    await deps.searchForm._fire("submit", { preventDefault: vi.fn() });
+    await vi.waitFor(() => {
+      expect(clickHandlers.length).toBeGreaterThan(0);
+    });
+
+    clickHandlers[0]();
+
+    expect(mapInstance.fitBounds).not.toHaveBeenCalled();
+    expect(mapInstance.flyTo).toHaveBeenCalledWith(
+      expect.objectContaining({ center: [179.5, 0] })
+    );
+  });
+
   it("sets correct button attributes on rendered results", async () => {
     stubFetchWith({ features: [nominatimFeature(10, 20, "Place")] });
     const { createdButtons } = stubDocument();

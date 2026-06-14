@@ -32,6 +32,16 @@ describe("interpolateGreatCircle", () => {
     expect(points[points.length - 1][1]).toBeCloseTo(40.64, 2);
   });
 
+  it("unwraps longitude across the antimeridian (no >180 jumps)", () => {
+    // Trans-Pacific arc crossing 180°: raw atan2 would jump +179 -> -179.
+    const points = interpolateGreatCircle([170, 10], [-170, 10], 64);
+    for (let i = 1; i < points.length; i++) {
+      expect(Math.abs(points[i][0] - points[i - 1][0])).toBeLessThan(180);
+    }
+    // Endpoint stays geographically equivalent (modulo 360).
+    expect(((points[points.length - 1][0] % 360) + 360) % 360).toBeCloseTo(190, 2);
+  });
+
   it("generates intermediate points that lie on the great-circle path", () => {
     // EGLL to KJFK — the midpoint should be roughly in the mid-Atlantic (~53°N, ~35°W)
     const start: [number, number] = [-0.46, 51.47];

@@ -84,7 +84,9 @@ function renderSearchResults(deps: SearchDeps, results: SearchResult[]): void {
       searchResults.replaceChildren();
       statusPill.textContent = `Flying to ${result.label}...`;
 
-      if (result.bbox) {
+      // A dateline-spanning bbox has minLng > maxLng; fitBounds would then fit
+      // the inverted (whole-globe) extent, so fall back to a centred flyTo.
+      if (result.bbox && result.bbox[0] <= result.bbox[2]) {
         mapInstance.fitBounds(
           [
             [result.bbox[0], result.bbox[1]],

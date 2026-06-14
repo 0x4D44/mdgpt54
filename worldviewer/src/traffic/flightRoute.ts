@@ -64,6 +64,7 @@ export function interpolateGreatCircle(
 
   const points: [number, number][] = [];
   const segments = Math.max(1, numPoints - 1);
+  let prevLng: number | null = null;
 
   for (let i = 0; i <= segments; i++) {
     const f = i / segments;
@@ -77,7 +78,17 @@ export function interpolateGreatCircle(
     const z = A * Math.sin(lat1) + B * Math.sin(lat2);
 
     const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) * RAD_TO_DEG;
-    const lng = Math.atan2(y, x) * RAD_TO_DEG;
+    let lng = Math.atan2(y, x) * RAD_TO_DEG;
+
+    // atan2 returns (-180, 180]; for arcs crossing the 180° meridian consecutive
+    // points jump +179 -> -179, which MapLibre draws as a line back across the
+    // whole map. Unwrap so consecutive deltas stay < 180 (the LineString then
+    // crosses the dateline cleanly; only showFlightRoute consumes these points).
+    if (prevLng !== null) {
+      while (lng - prevLng > 180) lng -= 360;
+      while (lng - prevLng < -180) lng += 360;
+    }
+    prevLng = lng;
 
     points.push([lng, lat]);
   }
