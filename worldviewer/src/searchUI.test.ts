@@ -233,6 +233,35 @@ describe("searchPlaces", () => {
     expect(results[0].label).toBe("Has coords");
   });
 
+  it("skips features with non-finite coordinates", async () => {
+    stubFetchWith({
+      features: [
+        { geometry: { coordinates: ["12.3", null] }, properties: { geocoding: { label: "bad" } } },
+        nominatimFeature(10, 20, "good")
+      ]
+    });
+
+    const results = await searchPlaces("test");
+    expect(results).toHaveLength(1);
+    expect(results[0].label).toBe("good");
+  });
+
+  it("drops a malformed bbox but keeps the result (degrades to flyTo)", async () => {
+    stubFetchWith({
+      features: [
+        {
+          geometry: { coordinates: [10, 20] },
+          bbox: [1, 2, 3, "x"],
+          properties: { geocoding: { label: "bad bbox" } }
+        }
+      ]
+    });
+
+    const results = await searchPlaces("test");
+    expect(results).toHaveLength(1);
+    expect(results[0].bbox).toBeUndefined();
+  });
+
   it("uses Unnamed location when label is missing", async () => {
     stubFetchWith({
       features: [{ geometry: { coordinates: [1, 2] }, properties: { geocoding: {} } }]

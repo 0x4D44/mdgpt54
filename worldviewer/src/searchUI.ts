@@ -142,18 +142,33 @@ export async function searchPlaces(query: string, signal?: AbortSignal): Promise
 
   return (payload.features ?? []).reduce<SearchResult[]>((results, feature) => {
     const coordinates = feature.geometry?.coordinates;
-    if (!coordinates) {
+    const lng = coordinates?.[0];
+    const lat = coordinates?.[1];
+    // Untrusted geocoder JSON: skip features without finite coordinates so a
+    // bad row can't make formatCoordinates/.toFixed throw and kill the list.
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
       return results;
     }
 
     results.push({
       label: feature.properties?.geocoding?.label ?? "Unnamed location",
-      lng: coordinates[0],
-      lat: coordinates[1],
-      bbox: feature.bbox
+      lng: lng as number,
+      lat: lat as number,
+      // Only attach a well-formed bbox; otherwise degrade to flyTo (don't drop
+      // an otherwise-valid result).
+      bbox: isFiniteBBox(feature.bbox) ? feature.bbox : undefined
     });
     return results;
   }, []);
+}
+
+/** True when value is a [minLng, minLat, maxLng, maxLat] tuple of finite numbers. */
+export function isFiniteBBox(value: unknown): value is [number, number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 4 &&
+    value.every((n) => typeof n === "number" && Number.isFinite(n))
+  );
 }
 
 export function isAbortError(error: unknown): boolean {

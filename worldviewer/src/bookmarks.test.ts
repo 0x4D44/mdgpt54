@@ -60,6 +60,58 @@ describe("bookmarks", () => {
       expect(loaded[0].label).toBe("Place 0");
       expect(loaded[MAX_BOOKMARKS - 1].label).toBe(`Place ${MAX_BOOKMARKS - 1}`);
     });
+
+    it("drops non-object / malformed elements", () => {
+      const valid = {
+        id: "b",
+        label: "L",
+        caption: "C",
+        lng: 1,
+        lat: 2,
+        zoom: 3,
+        pitch: 4,
+        bearing: 5
+      };
+      storage.setItem(
+        STORAGE_KEY,
+        JSON.stringify([null, 42, "x", { id: "a" }, valid])
+      );
+      const loaded = loadBookmarks(storage);
+      expect(loaded).toHaveLength(1);
+      expect(loaded[0].id).toBe("b");
+    });
+
+    it("drops entries with non-finite numeric fields", () => {
+      storage.setItem(
+        STORAGE_KEY,
+        JSON.stringify([
+          { id: "a", label: "L", caption: "C", lng: "NaN", lat: 2, zoom: 3, pitch: 4, bearing: 5 },
+          { id: "b", label: "L", caption: "C", lng: null, lat: 2, zoom: 3, pitch: 4, bearing: 5 }
+        ])
+      );
+      expect(loadBookmarks(storage)).toEqual([]);
+    });
+
+    it("applies the shape filter before the cap", () => {
+      const entries: unknown[] = [];
+      for (let i = 0; i < MAX_BOOKMARKS + 6; i++) {
+        entries.push(null); // invalid, must not consume the cap
+        entries.push({
+          id: `v${i}`,
+          label: `L${i}`,
+          caption: "C",
+          lng: i,
+          lat: i,
+          zoom: 3,
+          pitch: 4,
+          bearing: 5
+        });
+      }
+      storage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      const loaded = loadBookmarks(storage);
+      expect(loaded).toHaveLength(MAX_BOOKMARKS);
+      expect(loaded.every((bm) => bm.id.startsWith("v"))).toBe(true);
+    });
   });
 
   describe("saveBookmarks", () => {

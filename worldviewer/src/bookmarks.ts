@@ -12,6 +12,24 @@ export type Bookmark = {
 export const STORAGE_KEY = "worldviewer-bookmarks";
 export const MAX_BOOKMARKS = 24;
 
+/** Fail-closed shape guard: localStorage is user/version-writable, so validate
+ * each element before trusting it as a Bookmark (one bad entry must not crash
+ * rendering or feed NaN into the camera). */
+export function isBookmark(value: unknown): value is Bookmark {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.id === "string" &&
+    typeof v.label === "string" &&
+    typeof v.caption === "string" &&
+    Number.isFinite(v.lng) &&
+    Number.isFinite(v.lat) &&
+    Number.isFinite(v.zoom) &&
+    Number.isFinite(v.pitch) &&
+    Number.isFinite(v.bearing)
+  );
+}
+
 /** Load bookmarks from localStorage. Returns [] on parse failure or when empty. */
 export function loadBookmarks(storage: Storage = localStorage): Bookmark[] {
   try {
@@ -19,7 +37,8 @@ export function loadBookmarks(storage: Storage = localStorage): Bookmark[] {
     if (raw === null) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.slice(0, MAX_BOOKMARKS) as Bookmark[];
+    // Filter before slicing so corrupt entries don't consume the cap.
+    return parsed.filter(isBookmark).slice(0, MAX_BOOKMARKS);
   } catch {
     return [];
   }
