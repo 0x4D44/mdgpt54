@@ -59,14 +59,12 @@ import type { MapState } from "./mapState";
 import {
   syncViewState,
   syncSceneOverlays,
-  setReliefVisibility,
-  setLayerVisibility,
   spinGlobe,
-  currentTerrainOptions,
   renderSceneOverlayPresentation,
   type SceneSyncDeps
 } from "./sceneSync";
 import { wireSearch } from "./searchUI";
+import { TOGGLES, dispatchToggle } from "./sceneToggles";
 import {
   parseHash,
   serializeHash,
@@ -427,19 +425,18 @@ function currentHashState(): CameraHashState {
   const mapInstance = map;
   if (!mapInstance) return {};
   const center = mapInstance.getCenter();
-  return {
+  const state: CameraHashState = {
     lat: roundForHash(center.lat, 4),
     lng: roundForHash(center.lng, 4),
     z: roundForHash(mapInstance.getZoom(), 1),
     p: roundForHash(mapInstance.getPitch(), 0),
-    b: roundForHash(mapInstance.getBearing(), 0),
-    terrain: mapState.terrainEnabled,
-    buildings: mapState.buildingsEnabled,
-    relief: mapState.reliefEnabled,
-    night: mapState.nightEnabled,
-    weather: mapState.weatherEnabled,
-    spin: mapState.autoSpinEnabled
+    b: roundForHash(mapInstance.getBearing(), 0)
   };
+  for (const def of TOGGLES) {
+    if (!def.hashKey) continue;
+    state[def.hashKey] = mapState[def.stateKey];
+  }
+  return state;
 }
 
 const updateHash = debounce(() => {
@@ -538,24 +535,12 @@ function wireDockToggle(): void {
 
 /** Apply parsed hash toggle values to mapState and sync toggle chip classes. */
 function applyHashToggles(hashState: CameraHashState): void {
-  const toggles: Array<{
-    hashKey: keyof CameraHashState;
-    apply: (v: boolean) => void;
-    chipName: string;
-  }> = [
-    { hashKey: "terrain", apply: (v) => { mapState.terrainEnabled = v; }, chipName: "terrain" },
-    { hashKey: "buildings", apply: (v) => { mapState.buildingsEnabled = v; }, chipName: "buildings" },
-    { hashKey: "relief", apply: (v) => { mapState.reliefEnabled = v; }, chipName: "relief" },
-    { hashKey: "night", apply: (v) => { mapState.nightEnabled = v; }, chipName: "night" },
-    { hashKey: "weather", apply: (v) => { mapState.weatherEnabled = v; }, chipName: "weather" },
-    { hashKey: "spin", apply: (v) => { mapState.autoSpinEnabled = v; }, chipName: "spin" }
-  ];
-
-  for (const { hashKey, apply, chipName } of toggles) {
-    const value = hashState[hashKey];
+  for (const def of TOGGLES) {
+    if (!def.hashKey) continue;
+    const value = hashState[def.hashKey];
     if (typeof value !== "boolean") continue;
-    apply(value);
-    const chip = toggleButtons.find((btn) => btn.dataset.toggle === chipName);
+    mapState[def.stateKey] = value;
+    const chip = toggleButtons.find((btn) => btn.dataset.toggle === def.name);
     chip?.classList.toggle("is-active", value);
     chip?.setAttribute("aria-pressed", String(value));
   }
@@ -837,73 +822,22 @@ function wireToggles(): void {
       }
 
       const toggle = button.dataset.toggle;
-      switch (toggle) {
-        case "terrain":
-          mapState.terrainEnabled = !mapState.terrainEnabled;
-          mapInstance.setTerrain(mapState.terrainEnabled ? currentTerrainOptions(mapInstance, mapState) : null);
-          button.classList.toggle("is-active", mapState.terrainEnabled);
-          statusPill.textContent = mapState.terrainEnabled ? "Terrain enabled." : "Terrain flattened.";
-          syncViewState(mapInstance, sceneSyncDeps);
-          break;
-        case "relief":
-          mapState.reliefEnabled = !mapState.reliefEnabled;
-          setReliefVisibility(mapInstance, mapState.reliefEnabled, mapState);
-          button.classList.toggle("is-active", mapState.reliefEnabled);
-          statusPill.textContent = mapState.reliefEnabled ? "Relief overlay enabled." : "Relief overlay hidden.";
-          break;
-        case "buildings":
-          mapState.buildingsEnabled = !mapState.buildingsEnabled;
-          setLayerVisibility(mapInstance, BUILDING_LAYER_ID, mapState.buildingsEnabled);
-          setLayerVisibility(mapInstance, FLAT_BUILDING_LAYER_ID, mapState.buildingsEnabled);
-          button.classList.toggle("is-active", mapState.buildingsEnabled);
-          statusPill.textContent = mapState.buildingsEnabled ? "3D buildings enabled." : "Buildings hidden.";
-          syncViewState(mapInstance, sceneSyncDeps);
-          break;
-        case "night":
-          mapState.nightEnabled = !mapState.nightEnabled;
-          button.classList.toggle("is-active", mapState.nightEnabled);
-          syncSceneOverlays(mapInstance, sceneSyncDeps);
-          syncTimeScrubberVisibility();
-          statusPill.textContent = mapState.nightEnabled ? "Night overlay enabled." : "Night overlay hidden.";
-          break;
-        case "weather":
-          mapState.weatherEnabled = !mapState.weatherEnabled;
-          button.classList.toggle("is-active", mapState.weatherEnabled);
-          syncSceneOverlays(mapInstance, sceneSyncDeps);
-          statusPill.textContent = mapState.weatherEnabled ? "Weather radar enabled." : "Weather radar hidden.";
-          break;
-        case "earthquakes":
-          mapState.earthquakeEnabled = !mapState.earthquakeEnabled;
-          button.classList.toggle("is-active", mapState.earthquakeEnabled);
-          syncSceneOverlays(mapInstance, sceneSyncDeps);
-          statusPill.textContent = mapState.earthquakeEnabled ? "Earthquake layer enabled." : "Earthquake layer hidden.";
-          break;
-        case "iss":
-          mapState.issEnabled = !mapState.issEnabled;
-          button.classList.toggle("is-active", mapState.issEnabled);
-          syncSceneOverlays(mapInstance, sceneSyncDeps);
-          statusPill.textContent = mapState.issEnabled ? "ISS tracker enabled." : "ISS tracker hidden.";
-          break;
-        case "measure":
-          mapState.measureEnabled = !mapState.measureEnabled;
-          button.classList.toggle("is-active", mapState.measureEnabled);
-          syncSceneOverlays(mapInstance, sceneSyncDeps);
-          statusPill.textContent = mapState.measureEnabled
-            ? "Measure mode: click two points to measure distance."
-            : "Measure mode off.";
-          break;
-        case "spin":
-          mapState.autoSpinEnabled = !mapState.autoSpinEnabled;
-          button.classList.toggle("is-active", mapState.autoSpinEnabled);
-          statusPill.textContent = mapState.autoSpinEnabled ? "Orbital spin enabled." : "Orbital spin paused.";
-          if (mapState.autoSpinEnabled) {
-            spinGlobe(mapInstance, mapState);
-          }
-          break;
-        default:
-          break;
+      if (toggle === undefined) {
+        return;
       }
 
+      const result = dispatchToggle(toggle, {
+        map: mapInstance,
+        mapState,
+        sceneSyncDeps,
+        syncTimeScrubberVisibility
+      });
+      if (!result) {
+        return;
+      }
+
+      button.classList.toggle("is-active", result.on);
+      statusPill.textContent = result.status;
       button.setAttribute("aria-pressed", String(button.classList.contains("is-active")));
       updateHash();
     });

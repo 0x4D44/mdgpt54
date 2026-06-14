@@ -31,10 +31,10 @@ export const DEFAULTS: Required<CameraHashState> = {
 export const HASH_DEBOUNCE_MS = 400;
 
 const NUMERIC_KEYS = new Set(["lat", "lng", "z", "p", "b"]);
-const BOOLEAN_KEYS = new Set(["terrain", "night", "weather", "relief", "buildings", "spin"]);
+export const BOOLEAN_KEYS = new Set(["terrain", "night", "weather", "relief", "buildings", "spin"]);
 
 /** Canonical serialisation order: camera first, then toggles. */
-const KEY_ORDER: ReadonlyArray<keyof CameraHashState> = [
+export const KEY_ORDER: ReadonlyArray<keyof CameraHashState> = [
   "lat", "lng", "z", "p", "b",
   "terrain", "night", "weather", "relief", "buildings", "spin"
 ];
