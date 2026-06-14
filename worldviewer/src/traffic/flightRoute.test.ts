@@ -4,6 +4,9 @@ import {
   interpolateGreatCircle,
   lookupAirportCoords,
   fetchFlightRoute,
+  resolveFlightRouteCached,
+  clearRouteCache,
+  ROUTE_CACHE_MAX,
   FLIGHT_ROUTE_SOURCE,
   FLIGHT_ROUTE_LAYER
 } from "./flightRoute";
@@ -121,6 +124,44 @@ describe("lookupAirportCoords", () => {
     const upper = lookupAirportCoords("EGLL");
     const lower = lookupAirportCoords("egll");
     expect(upper).toEqual(lower);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveFlightRouteCached — cache bounding
+// ---------------------------------------------------------------------------
+describe("resolveFlightRouteCached cache bounding", () => {
+  beforeEach(() => {
+    clearRouteCache();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    clearRouteCache();
+  });
+
+  it("evicts the oldest entry once ROUTE_CACHE_MAX is exceeded (FIFO)", async () => {
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+
+    // Fill the cache to capacity with distinct callsigns (each a miss -> one fetch).
+    for (let i = 0; i < ROUTE_CACHE_MAX; i++) {
+      await resolveFlightRouteCached(`R${i}`);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(ROUTE_CACHE_MAX);
+
+    // A still-cached callsign is a hit (no extra fetch); does not reorder eviction.
+    await resolveFlightRouteCached("R1");
+    expect(fetchMock).toHaveBeenCalledTimes(ROUTE_CACHE_MAX);
+
+    // One more distinct callsign exceeds the cap and evicts the oldest (R0).
+    await resolveFlightRouteCached("RX");
+    expect(fetchMock).toHaveBeenCalledTimes(ROUTE_CACHE_MAX + 1);
+
+    // R0 was evicted, so requesting it again is a miss -> refetch.
+    await resolveFlightRouteCached("R0");
+    expect(fetchMock).toHaveBeenCalledTimes(ROUTE_CACHE_MAX + 2);
   });
 });
 

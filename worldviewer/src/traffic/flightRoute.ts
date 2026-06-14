@@ -372,10 +372,20 @@ export async function resolveFlightRoute(
 // In-memory route cache (per session)
 // ---------------------------------------------------------------------------
 
+/** Upper bound on cached route entries; oldest are evicted FIFO past this. */
+export const ROUTE_CACHE_MAX = 256;
+
 const routeCache = new Map<string, FlightRouteResult | null>();
+
+/** Clear the in-memory route cache (lifecycle/teardown + test hygiene). */
+export function clearRouteCache(): void {
+  routeCache.clear();
+}
 
 /**
  * Cached version of resolveFlightRoute — avoids redundant API calls for the same callsign.
+ * The cache is bounded to ROUTE_CACHE_MAX entries (FIFO eviction) so a long session
+ * with many distinct callsigns cannot grow it without limit.
  */
 export async function resolveFlightRouteCached(
   callsign: string,
@@ -387,6 +397,12 @@ export async function resolveFlightRouteCached(
   }
 
   const result = await resolveFlightRoute(callsign, signal);
+  if (routeCache.size >= ROUTE_CACHE_MAX) {
+    const oldest = routeCache.keys().next().value;
+    if (oldest !== undefined) {
+      routeCache.delete(oldest);
+    }
+  }
   routeCache.set(key, result);
   return result;
 }
