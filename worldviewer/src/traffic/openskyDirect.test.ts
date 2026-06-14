@@ -162,6 +162,23 @@ describe("parseOpenSkyStates", () => {
     expect(tracks).toEqual([]);
   });
 
+  it("drops rows without a stable string icao24 (no synthetic ids)", () => {
+    const now = 1773360000000;
+    const tracks = parseOpenSkyStates(
+      {
+        states: [
+          ["abc123", "BAW1  ", "United Kingdom", null, 1773360000, -0.1, 51.5, 10000, false, 250, 45],
+          // index 0 (icao24) is null but the position is valid -> must be dropped
+          [null, "CALL  ", "France", null, 1773360000, -3.3, 55.9, 10000, false, 250, 45]
+        ]
+      },
+      now
+    );
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0].id).toBe("abc123");
+  });
+
   it("returns null callsign when the callsign field is not a string", () => {
     const now = 1773360000000;
     const tracks = parseOpenSkyStates(

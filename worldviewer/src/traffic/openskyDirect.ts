@@ -43,12 +43,20 @@ export function parseOpenSkyStates(data: unknown, now: number = Date.now()): Liv
       continue;
     }
 
+    // Require a stable id (icao24). A synthetic id would change every poll,
+    // producing orphaned single-point trails and churning 3D objects, so drop
+    // rows without one. Real OpenSky rows always carry a string icao24.
+    const id = typeof state[STATE_ICAO24] === "string" ? state[STATE_ICAO24].trim() : "";
+    if (id.length === 0) {
+      continue;
+    }
+
     const velocityMps = typeof state[STATE_VELOCITY] === "number" ? state[STATE_VELOCITY] : null;
     const callsign = normalizeCallsign(state[STATE_CALLSIGN]);
     const flightCode = deriveFlightCode(callsign);
 
     tracks.push({
-      id: typeof state[STATE_ICAO24] === "string" ? state[STATE_ICAO24] : `${lng},${lat},${now}`,
+      id,
       kind: "aircraft",
       lng,
       lat,
