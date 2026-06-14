@@ -104,16 +104,25 @@ export function buildIssTrailFeature(trail: IssPosition[]): GeoJSON.Feature<GeoJ
 
   for (let i = 1; i < trail.length; i++) {
     const prevLng = trail[i - 1].longitude;
+    const prevLat = trail[i - 1].latitude;
     const curLng = trail[i].longitude;
+    const curLat = trail[i].latitude;
+    const delta = curLng - prevLng;
 
-    if (Math.abs(curLng - prevLng) > 180) {
-      // Antimeridian crossing: finish current segment, start a new one
-      if (current.length >= 2) {
-        segments.push(current);
-      }
-      current = [[curLng, trail[i].latitude]];
+    if (Math.abs(delta) > 180) {
+      // Antimeridian crossing: bridge each side to ±180 so the rendered trail
+      // meets the dateline cleanly, and never drop a real vertex.
+      const prevBoundary = prevLng > 0 ? 180 : -180;
+      const curBoundary = -prevBoundary;
+      const wrapped = delta - Math.sign(delta) * 360;
+      const t = wrapped === 0 ? 0 : (prevBoundary - prevLng) / wrapped;
+      const boundaryLat = prevLat + (curLat - prevLat) * t;
+
+      current.push([prevBoundary, boundaryLat]);
+      segments.push(current);
+      current = [[curBoundary, boundaryLat], [curLng, curLat]];
     } else {
-      current.push([curLng, trail[i].latitude]);
+      current.push([curLng, curLat]);
     }
   }
 

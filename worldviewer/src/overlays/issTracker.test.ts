@@ -162,7 +162,7 @@ describe("issTracker", () => {
       ]);
     });
 
-    it("splits at the antimeridian crossing", () => {
+    it("splits at the antimeridian crossing and bridges to ±180", () => {
       const trail: IssPosition[] = [
         { latitude: 10, longitude: 170, altitude: 400, velocity: 27000, timestamp: 1 },
         { latitude: 11, longitude: 175, altitude: 400, velocity: 27000, timestamp: 2 },
@@ -171,16 +171,23 @@ describe("issTracker", () => {
       ];
 
       const result = buildIssTrailFeature(trail);
+      // Boundary latitude interpolated where 175 -> -175 crosses 180: t=0.5 -> 11.5
       expect(result.geometry.coordinates).toHaveLength(2);
       expect(result.geometry.coordinates[0]).toEqual([
-        [170, 10], [175, 11]
+        [170, 10], [175, 11], [180, 11.5]
       ]);
       expect(result.geometry.coordinates[1]).toEqual([
-        [-175, 12], [-170, 13]
+        [-180, 11.5], [-175, 12], [-170, 13]
       ]);
+      // The two sides meet at the same interpolated latitude on the dateline.
+      const seg0 = result.geometry.coordinates[0];
+      const seg1 = result.geometry.coordinates[1];
+      expect(seg0[seg0.length - 1][0]).toBe(180);
+      expect(seg1[0][0]).toBe(-180);
+      expect(seg0[seg0.length - 1][1]).toBe(seg1[0][1]);
     });
 
-    it("handles multiple antimeridian crossings", () => {
+    it("handles multiple antimeridian crossings without dropping vertices", () => {
       const trail: IssPosition[] = [
         { latitude: 10, longitude: 170, altitude: 400, velocity: 27000, timestamp: 1 },
         { latitude: 11, longitude: -170, altitude: 400, velocity: 27000, timestamp: 2 },
@@ -190,10 +197,14 @@ describe("issTracker", () => {
       ];
 
       const result = buildIssTrailFeature(trail);
-      // Segment 1: [170,10] alone → too short, dropped
-      // Segment 2: [-170,11], [-160,12] → 2 points
-      // Segment 3: [170,13], [175,14] → 2 points
-      expect(result.geometry.coordinates).toHaveLength(2);
+      // Two crossings -> three segments; the first vertex [170,10] is retained.
+      expect(result.geometry.coordinates).toHaveLength(3);
+      expect(result.geometry.coordinates[0][0]).toEqual([170, 10]);
+      // Every original trail point appears somewhere in the output.
+      const allPoints = result.geometry.coordinates.flat();
+      for (const p of trail) {
+        expect(allPoints).toContainEqual([p.longitude, p.latitude]);
+      }
     });
   });
 
