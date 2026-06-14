@@ -113,6 +113,10 @@ describe("lookupAirportCoords", () => {
     expect(lookupAirportCoords("FAKE")).toBeNull();
   });
 
+  it("does not resolve the bogus KMDK entry (was a KBWI coordinate duplicate)", () => {
+    expect(lookupAirportCoords("KMDK")).toBeNull();
+  });
+
   it("handles case-insensitive lookup", () => {
     const upper = lookupAirportCoords("EGLL");
     const lower = lookupAirportCoords("egll");

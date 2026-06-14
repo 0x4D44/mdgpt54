@@ -121,7 +121,6 @@ const AIRPORT_COORDS: ReadonlyMap<string, [number, number]> = new Map<string, [n
   ["KAUS", [30.19, -97.67]],
   ["KMIA", [25.79, -80.29]],
   ["KHOU", [29.65, -95.28]],
-  ["KMDK", [39.17, -76.67]],
   ["KPIT", [40.50, -80.23]],
   ["KRDU", [35.88, -78.79]],
   ["KCLT", [35.21, -80.94]],
