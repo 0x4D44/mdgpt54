@@ -2,7 +2,7 @@ import { MercatorCoordinate, type CustomLayerInterface, type Map as MapLibreMap 
 
 import {
   buildRenderableAircraft3dTracks,
-  filterAircraft3dHandoffTracks,
+  filterAircraft3dHandoffTracksWithHysteresis,
   resolveAircraft3dModeFromVisibleCount,
   type Aircraft3dClassKey,
   type RenderableAircraft3dTrack
@@ -95,7 +95,11 @@ export class Aircraft3dController {
 
     const zoom = this.map.getZoom();
     const renderableTracks = buildRenderableAircraft3dTracks(this.latestTracks, bboxFromBounds(this.map.getBounds()));
-    const handoffTracks = filterAircraft3dHandoffTracks(renderableTracks, zoom);
+    const handoffTracks = filterAircraft3dHandoffTracksWithHysteresis(
+      renderableTracks,
+      zoom,
+      this.hiddenTrackIds
+    );
     const mode = resolveAircraft3dModeFromVisibleCount(this.enabled, {
       zoom,
       pitch: this.map.getPitch(),

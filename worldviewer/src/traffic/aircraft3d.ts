@@ -48,6 +48,10 @@ const AIRCRAFT_3D_OFF_COUNT = 32;
 // Match the capped 2D aircraft symbol size so 3D never replaces it with a much
 // smaller meter-true mesh at handoff.
 const AIRCRAFT_3D_MIN_HANDOFF_SIZE_PX = AIRCRAFT_2D_SYMBOL_MAX_SIZE_PX;
+// Per-track handoff hysteresis: a track already shown in 3D stays 3D until it
+// shrinks below this lower bound, so an aircraft whose size hovers near the ON
+// threshold doesn't flicker 2D<->3D frame-by-frame as the camera drifts.
+const AIRCRAFT_3D_HANDOFF_OFF_SIZE_PX = AIRCRAFT_3D_MIN_HANDOFF_SIZE_PX * 0.8;
 const WEB_MERCATOR_MAX_LATITUDE = 85.05112878;
 const WEB_MERCATOR_WORLD_SIZE_AT_ZOOM_0 = 512;
 const EARTH_CIRCUMFERENCE_METERS = 40_075_016.68557849;
@@ -183,6 +187,24 @@ export function isAircraft3dHandoffTrack(
   zoom: number
 ): boolean {
   return estimateAircraft3dScreenSizePixels(track, zoom) >= AIRCRAFT_3D_MIN_HANDOFF_SIZE_PX;
+}
+
+/**
+ * Like filterAircraft3dHandoffTracks but with per-track hysteresis: tracks
+ * already handed off (in `previouslyHandedOff`) stay 3D until they shrink below
+ * the OFF threshold; others are promoted only once they exceed the ON threshold.
+ */
+export function filterAircraft3dHandoffTracksWithHysteresis(
+  tracks: RenderableAircraft3dTrack[],
+  zoom: number,
+  previouslyHandedOff: ReadonlySet<string>
+): RenderableAircraft3dTrack[] {
+  return tracks.filter((track) => {
+    const size = estimateAircraft3dScreenSizePixels(track, zoom);
+    return previouslyHandedOff.has(track.id)
+      ? size >= AIRCRAFT_3D_HANDOFF_OFF_SIZE_PX
+      : size >= AIRCRAFT_3D_MIN_HANDOFF_SIZE_PX;
+  });
 }
 
 export function getAircraft3dAltitudeMeters(

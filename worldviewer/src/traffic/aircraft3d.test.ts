@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildRenderableAircraft3dTracks,
   filterAircraft3dHandoffTracks,
+  filterAircraft3dHandoffTracksWithHysteresis,
   getAircraft3dAltitudeMeters,
+  isAircraft3dHandoffTrack,
   resolveAircraft3dMode,
   selectAircraft3dClass
 } from "./aircraft3d";
@@ -385,5 +387,33 @@ describe("filterAircraft3dHandoffTracks", () => {
         (track) => track.id
       )
     ).toEqual(["north-narrow"]);
+  });
+});
+
+describe("filterAircraft3dHandoffTracksWithHysteresis", () => {
+  it("keeps an already-promoted track in 3D through the dead band (no flicker)", () => {
+    const track = makeRenderableTrack({ id: "wide", lat: 55.9, classKey: "wide-body" });
+
+    // Find the ON-crossing zoom, then drop just below it into the dead band
+    // (size between the OFF and ON thresholds).
+    let onZoom = 0;
+    for (let z = 10; z <= 16; z += 0.01) {
+      if (isAircraft3dHandoffTrack(track, z)) {
+        onZoom = z;
+        break;
+      }
+    }
+    const deadBandZoom = onZoom - 0.15;
+    expect(isAircraft3dHandoffTrack(track, deadBandZoom)).toBe(false);
+
+    // Not previously handed off -> not promoted (must exceed ON first).
+    expect(
+      filterAircraft3dHandoffTracksWithHysteresis([track], deadBandZoom, new Set()).map((t) => t.id)
+    ).toEqual([]);
+
+    // Already handed off -> sticky, stays in 3D until below OFF.
+    expect(
+      filterAircraft3dHandoffTracksWithHysteresis([track], deadBandZoom, new Set(["wide"])).map((t) => t.id)
+    ).toEqual(["wide"]);
   });
 });
