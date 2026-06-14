@@ -29,6 +29,21 @@ npm run refresh:aircraft-identity -- --input tmp/aircraft-database-complete-2025
 
 This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the first two hex characters of `icao24` (`00.json` .. `ff.json`), and logs each shard's raw and gzip size so the guardrails are visible before commit.
 
+## Live aircraft (OpenSky proxy)
+
+OpenSky's anonymous API returns `Access-Control-Allow-Origin: https://opensky-network.org`, so a
+browser on any other origin (GitHub Pages, `localhost`) is **blocked by CORS** and live aircraft do
+not load. A tiny same-origin proxy fixes this: deploy `worker/opensky-proxy.js` (a stateless
+Cloudflare Worker — paste-and-deploy, no build) and build the site with its URL:
+
+```powershell
+$env:VITE_OPENSKY_BASE = "https://worldviewer-opensky.<account>.workers.dev"; npm run build
+```
+
+The client routes both OpenSky endpoints (`/api/states/all`, `/api/routes`) through this base. If
+`VITE_OPENSKY_BASE` is unset it falls back to OpenSky directly (which only works when served from
+opensky-network.org). The CSP already allows `https://*.workers.dev`.
+
 ## Stack
 
 - MapLibre GL JS for globe rendering and camera control
@@ -36,14 +51,14 @@ This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the firs
 - EOX Sentinel-2 Cloudless imagery for realistic satellite texture
 - AWS Terrain Tiles / Terrarium DEM for terrain and relief
 - OpenStreetMap Nominatim search for lightweight geocoding
-- OpenSky direct from the browser for live aircraft
+- OpenSky for live aircraft, via a small same-origin CORS proxy (see "Live aircraft" above)
 - OpenSky aircraft metadata snapshots for static aircraft identity shards
 
 ## Notes
 
 - This is the realistic open-data version of the feature. It reaches street-scale navigation with terrain, roads, labels, and extruded buildings, but it is not worldwide photogrammetry.
 - Live traffic is intended for personal, non-commercial use and depends on public community feeds. Coverage and freshness vary by region and provider.
-- This build targets GitHub Pages: the static globe, live aircraft, and aircraft identity all come from OpenSky-compatible browser/static paths, so no server is required.
+- This build targets GitHub Pages: the static globe and aircraft identity need no server. Live aircraft additionally need the small OpenSky CORS proxy described above (OpenSky no longer allows browser-direct cross-origin fetches).
 - At higher zoom and pitch, airborne aircraft switch from 2D symbols to bounded 3D class models in the browser. This only activates when the visible airborne aircraft count stays low enough to keep the map responsive.
 - The external services above are public community/demo services. For sustained production traffic, swap them for self-hosted or contracted equivalents.
 

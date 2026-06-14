@@ -7,6 +7,8 @@
 
 import type { Map as MaplibreMap } from "maplibre-gl";
 
+import { OPENSKY_API_BASE } from "./openskyDirect";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -14,7 +16,7 @@ import type { Map as MaplibreMap } from "maplibre-gl";
 export const FLIGHT_ROUTE_SOURCE = "flight-route";
 export const FLIGHT_ROUTE_LAYER = "flight-route-line";
 
-const OPENSKY_ROUTE_API = "https://opensky-network.org/api/routes";
+const OPENSKY_ROUTE_API = `${OPENSKY_API_BASE}/api/routes`;
 
 const EMPTY_FC: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",

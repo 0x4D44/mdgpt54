@@ -2,6 +2,21 @@ import { deriveFlightCode } from "./trafficHelpers";
 import type { Bbox, LiveTrack } from "./trafficTypes";
 
 const MPS_TO_KNOTS = 1.94384;
+
+/**
+ * Base origin for the OpenSky API. OpenSky's anonymous API sends
+ * `Access-Control-Allow-Origin: https://opensky-network.org`, which browsers
+ * block for any other page origin, so a same-origin CORS proxy is required to
+ * use it from the browser (see worker/opensky-proxy.js). Set VITE_OPENSKY_BASE
+ * to the proxy origin at build time; defaults to OpenSky directly (works only
+ * when the page is served from opensky-network.org, i.e. effectively never here).
+ */
+const OPENSKY_BASE_RAW = import.meta.env.VITE_OPENSKY_BASE;
+export const OPENSKY_API_BASE =
+  typeof OPENSKY_BASE_RAW === "string" && OPENSKY_BASE_RAW.trim().length > 0
+    ? OPENSKY_BASE_RAW.replace(/\/+$/, "")
+    : "https://opensky-network.org";
+
 const STATE_ICAO24 = 0;
 const STATE_CALLSIGN = 1;
 const STATE_LONGITUDE = 5;
@@ -16,7 +31,7 @@ const STATE_CATEGORY = 17;
 export function openSkyUrl(bbox: Bbox): string {
   const [west, south, east, north] = bbox;
   return (
-    "https://opensky-network.org/api/states/all" +
+    `${OPENSKY_API_BASE}/api/states/all` +
     `?lamin=${south}&lomin=${west}&lamax=${north}&lomax=${east}&extended=1`
   );
 }
