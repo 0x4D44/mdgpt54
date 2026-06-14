@@ -381,6 +381,24 @@ function normalizeRainViewerHost(host: unknown): string | null {
     return null;
   }
 
+  // The host arrives from the untrusted RainViewer metadata JSON and is used
+  // verbatim as a MapLibre tile origin. Constrain it to https RainViewer hosts
+  // so a spoofed/MITM'd metadata response can't redirect all tile requests to
+  // an attacker origin.
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedHost);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") {
+    return null;
+  }
+  const hostname = parsed.hostname;
+  if (hostname !== "rainviewer.com" && !hostname.endsWith(".rainviewer.com")) {
+    return null;
+  }
+
   return trimmedHost.endsWith("/") ? trimmedHost.slice(0, -1) : trimmedHost;
 }
 

@@ -632,6 +632,22 @@ describe("weatherRadar", () => {
     expect(() => buildWeatherRadarTileUrl("  ", "/v2/radar/1")).toThrow();
   });
 
+  it("rejects metadata hosts outside https *.rainviewer.com", () => {
+    const radar = { past: [{ time: 1_763_000_000, path: "/v2/radar/1" }] };
+    // Attacker origin
+    expect(parseLatestWeatherRadarFrame({ host: "https://evil.example", radar })).toBeNull();
+    // Non-https rainviewer host
+    expect(parseLatestWeatherRadarFrame({ host: "http://tilecache.rainviewer.com", radar })).toBeNull();
+    // Look-alike domain (must not match via bare suffix)
+    expect(parseLatestWeatherRadarFrame({ host: "https://evilrainviewer.com", radar })).toBeNull();
+    // Legitimate host still accepted
+    expect(parseLatestWeatherRadarFrame({ host: "https://tilecache.rainviewer.com", radar })).not.toBeNull();
+  });
+
+  it("throws when buildWeatherRadarTileUrl receives a non-rainviewer host", () => {
+    expect(() => buildWeatherRadarTileUrl("https://evil.example", "/v2/radar/1")).toThrow();
+  });
+
   it("silently returns when fetch is aborted during refresh", async () => {
     let rejectFetch: (reason: unknown) => void;
     const fetchImpl = vi.fn(
