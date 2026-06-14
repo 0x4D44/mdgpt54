@@ -24,7 +24,7 @@ export function createTrafficUI(controlDock: HTMLElement): TrafficUIElements {
     </div>
     <p id="traffic-hints" class="traffic-hints" hidden></p>
     <p class="traffic-coverage">
-      Coverage varies by region. Aircraft live traffic and metadata from OpenSky Network.
+      Coverage varies by region. Aircraft live traffic from airplanes.live; aircraft metadata from OpenSky Network.
       Ships from AISStream coastal networks. Personal, non-commercial use.
     </p>
     <p id="traffic-credit" class="credit-note traffic-credit" hidden></p>
@@ -160,7 +160,7 @@ export function updateLayerStatusHints(
 /** Update the traffic credit/attribution line. */
 export function updateTrafficCredit(els: TrafficUIElements, aircraftEnabled: boolean, shipsEnabled: boolean): void {
   const parts: string[] = [];
-  if (aircraftEnabled) parts.push("Aircraft: OpenSky Network live traffic + aircraft metadata");
+  if (aircraftEnabled) parts.push("Aircraft: airplanes.live live traffic + OpenSky aircraft metadata");
   if (shipsEnabled) parts.push("Ships: AISStream");
 
   if (parts.length === 0) {

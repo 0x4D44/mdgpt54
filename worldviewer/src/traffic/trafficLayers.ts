@@ -701,6 +701,10 @@ function formatSourceLabel(source: string | null): string | null {
     return "OpenSky";
   }
 
+  if (source === "airplaneslive") {
+    return "airplanes.live";
+  }
+
   if (source === "aisstream") {
     return "AISStream";
   }

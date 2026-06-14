@@ -1,7 +1,7 @@
 import type { Map } from "maplibre-gl";
 
 import { AircraftIdentityStore } from "./aircraftIdentity";
-import { openSkyUrl, parseOpenSkyStates } from "./openskyDirect";
+import { airplanesLiveUrl, parseAirplanesLive } from "./airplanesLive";
 import {
   MIN_LIVE_TRAFFIC_ZOOM,
   bboxFromBounds,
@@ -181,7 +181,7 @@ export class TrafficClient {
     this.aircraftAbort = abortController;
 
     try {
-      const response = await fetch(openSkyUrl(bbox), {
+      const response = await fetch(airplanesLiveUrl(bbox), {
         headers: {
           Accept: "application/json"
         },
@@ -189,7 +189,7 @@ export class TrafficClient {
       });
 
       if (!response.ok) {
-        throw new Error(`OpenSky returned ${response.status}.`);
+        throw new Error(`airplanes.live returned ${response.status}.`);
       }
 
       const payload = (await response.json()) as unknown;
@@ -198,7 +198,7 @@ export class TrafficClient {
       }
 
       const now = Date.now();
-      const parsedAircraft = parseOpenSkyStates(payload, now);
+      const parsedAircraft = parseAirplanesLive(payload, now);
       this.latestAircraft = this.aircraftIdentity.mergeTracks(parsedAircraft);
       this.lastAircraftPollAt = now;
       this.lastAircraftBbox = bbox;
@@ -216,7 +216,7 @@ export class TrafficClient {
         return;
       }
 
-      console.warn("[opensky] browser poll error:", error);
+      console.warn("[airplanes.live] browser poll error:", error);
       this.latestAircraft = [];
       this.aircraftRuntime = "error";
       this.aircraftConsecutiveErrors++;

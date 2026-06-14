@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { EARTHQUAKE_API_URL } from "./overlays/earthquakeOverlay";
 import { ISS_API_URL } from "./overlays/issTracker";
 import { WEATHER_RADAR_METADATA_URL } from "./overlays/weatherRadar";
+import { airplanesLiveUrl } from "./traffic/airplanesLive";
 import { openSkyUrl } from "./traffic/openskyDirect";
 
 // index.html lives one level above src/. Read the source HTML the Vite build
@@ -43,6 +44,7 @@ describe("Content-Security-Policy", () => {
     new URL(ISS_API_URL).origin,
     new URL(WEATHER_RADAR_METADATA_URL).origin,
     new URL(openSkyUrl([0, 0, 1, 1])).origin,
+    new URL(airplanesLiveUrl([0, 0, 1, 1])).origin,
     // Origins from module-private constants (documented here so drift is caught
     // if the CSP is trimmed): map style, satellite tiles, terrain DEM, geocoder,
     // flight-route API, and the RainViewer tile CDN wildcard.

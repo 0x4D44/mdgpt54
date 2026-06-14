@@ -1054,8 +1054,8 @@ describe("TrafficClient", () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({
-        states: [
-          ["abc123", "BAW123", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+        ac: [
+          { hex: "abc123", flight: "BAW123", lat: 55.95, lon: -3.3, alt_baro: 10000, gs: 250, track: 90, category: "A3" }
         ]
       })
     }));
@@ -1303,8 +1303,8 @@ describe("TrafficClient", () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({
-        states: [
-          ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+        ac: [
+          { hex: "abc123", flight: "BAW456", lat: 55.95, lon: -3.3, alt_baro: 10000, gs: 250, track: 90, category: "A3" }
         ]
       })
     }));
@@ -1495,12 +1495,12 @@ describe("TrafficClient", () => {
 
     // Return one aircraft so latestAircraft.length > 0 after first poll
     const fetchMock = vi.fn(async (url: string) => {
-      if (typeof url === "string" && url.includes("opensky")) {
+      if (typeof url === "string" && url.includes("airplanes")) {
         return {
           ok: true,
           json: async () => ({
-            states: [
-              ["abc123", "TST1", null, null, null, -3.3, 55.95, 1000, false, 100, 90, null, null, null, null, null, null, 4]
+            ac: [
+              { hex: "abc123", flight: "TST1", lat: 55.95, lon: -3.3, alt_baro: 1000, gs: 100, track: 90, category: "A3" }
             ]
           })
         };
@@ -1518,19 +1518,19 @@ describe("TrafficClient", () => {
     await flushAsyncWork();
     await flushAsyncWork();
 
-    const openskyBefore = fetchMock.mock.calls.filter(
-      (c) => typeof c[0] === "string" && (c[0] as string).includes("opensky")
+    const aircraftBefore = fetchMock.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("airplanes")
     ).length;
-    expect(openskyBefore).toBe(1);
+    expect(aircraftBefore).toBe(1);
 
     // sendSubscribe with same bbox and fresh data (not stale) should skip poll
     client.sendSubscribe();
     await flushAsyncWork();
 
-    const openskyAfter = fetchMock.mock.calls.filter(
-      (c) => typeof c[0] === "string" && (c[0] as string).includes("opensky")
+    const aircraftAfter = fetchMock.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("airplanes")
     ).length;
-    expect(openskyAfter).toBe(1);
+    expect(aircraftAfter).toBe(1);
 
     client.dispose();
   });
@@ -1593,12 +1593,12 @@ describe("TrafficClient", () => {
   it("refreshAircraftIdentity merges identity data into tracks", async () => {
     // Set up fetch to return aircraft and identity shard data
     const fetchMock = vi.fn(async (url: string) => {
-      if (typeof url === "string" && url.includes("opensky")) {
+      if (typeof url === "string" && url.includes("airplanes")) {
         return {
           ok: true,
           json: async () => ({
-            states: [
-              ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+            ac: [
+              { hex: "abc123", flight: "BAW456", lat: 55.95, lon: -3.3, alt_baro: 10000, gs: 250, track: 90, category: "A3" }
             ]
           })
         };
@@ -1623,7 +1623,7 @@ describe("TrafficClient", () => {
     });
 
     client.setLayers(true, false);
-    // Wait for opensky fetch, identity fetch, and refresh
+    // Wait for aircraft fetch, identity fetch, and refresh
     for (let i = 0; i < 10; i++) {
       await Promise.resolve();
     }
@@ -1819,12 +1819,12 @@ describe("TrafficClient", () => {
   it("refreshAircraftIdentity bails when aircraft cleared before identity loads", async () => {
     let resolveIdentity: (() => void) | null = null;
     const fetchMock = vi.fn(async (url: string) => {
-      if (typeof url === "string" && url.includes("opensky")) {
+      if (typeof url === "string" && url.includes("airplanes")) {
         return {
           ok: true,
           json: async () => ({
-            states: [
-              ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+            ac: [
+              { hex: "abc123", flight: "BAW456", lat: 55.95, lon: -3.3, alt_baro: 10000, gs: 250, track: 90, category: "A3" }
             ]
           })
         };
@@ -1870,12 +1870,12 @@ describe("TrafficClient", () => {
 
   it("identity merge triggers additional snapshot when identity changes tracks", async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      if (typeof url === "string" && url.includes("opensky")) {
+      if (typeof url === "string" && url.includes("airplanes")) {
         return {
           ok: true,
           json: async () => ({
-            states: [
-              ["abc123", "BAW456", null, null, null, -3.3, 55.95, 10000, false, 250, 90, null, null, 9500, null, null, null, 4]
+            ac: [
+              { hex: "abc123", flight: "BAW456", lat: 55.95, lon: -3.3, alt_baro: 10000, gs: 250, track: 90, category: "A3" }
             ]
           })
         };

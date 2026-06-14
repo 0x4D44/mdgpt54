@@ -330,7 +330,7 @@ describe("updateTrafficCredit", () => {
 
     expect(els.creditNote.hidden).toBe(false);
     expect(els.creditNote.textContent).toBe(
-      "Traffic: Aircraft: OpenSky Network live traffic + aircraft metadata."
+      "Traffic: Aircraft: airplanes.live live traffic + OpenSky aircraft metadata."
     );
   });
 
@@ -350,7 +350,7 @@ describe("updateTrafficCredit", () => {
 
     expect(els.creditNote.hidden).toBe(false);
     expect(els.creditNote.textContent).toBe(
-      "Traffic: Aircraft: OpenSky Network live traffic + aircraft metadata, Ships: AISStream."
+      "Traffic: Aircraft: airplanes.live live traffic + OpenSky aircraft metadata, Ships: AISStream."
     );
   });
 

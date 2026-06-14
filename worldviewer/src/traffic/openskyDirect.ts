@@ -4,18 +4,12 @@ import type { Bbox, LiveTrack } from "./trafficTypes";
 const MPS_TO_KNOTS = 1.94384;
 
 /**
- * Base origin for the OpenSky API. OpenSky's anonymous API sends
- * `Access-Control-Allow-Origin: https://opensky-network.org`, which browsers
- * block for any other page origin, so a same-origin CORS proxy is required to
- * use it from the browser (see worker/opensky-proxy.js). Set VITE_OPENSKY_BASE
- * to the proxy origin at build time; defaults to OpenSky directly (works only
- * when the page is served from opensky-network.org, i.e. effectively never here).
+ * OpenSky API base. Live aircraft now come from airplanes.live (browser-direct);
+ * this remains only for the flight-route lookup (opensky-network.org/api/routes),
+ * which is itself blocked by OpenSky CORS from the browser and so degrades to
+ * "no arc" — kept for the route URL constant and tests.
  */
-const OPENSKY_BASE_RAW = import.meta.env.VITE_OPENSKY_BASE;
-export const OPENSKY_API_BASE =
-  typeof OPENSKY_BASE_RAW === "string" && OPENSKY_BASE_RAW.trim().length > 0
-    ? OPENSKY_BASE_RAW.replace(/\/+$/, "")
-    : "https://opensky-network.org";
+export const OPENSKY_API_BASE = "https://opensky-network.org";
 
 const STATE_ICAO24 = 0;
 const STATE_CALLSIGN = 1;

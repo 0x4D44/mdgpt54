@@ -13,7 +13,7 @@ export type LiveTrack = {
   speedKnots: number | null;
   altitudeMeters: number | null;
   label: string | null;
-  source: "opensky" | "aisstream";
+  source: "opensky" | "airplaneslive" | "aisstream";
   updatedAt: number;
   onGround?: boolean | null;
   callsign?: string | null;
