@@ -41,8 +41,49 @@ function corsHeaders(origin) {
   };
 }
 
+// OpenSky OAuth2 client-credentials. Anonymous access is per-IP rate-limited
+// (~400/day) and Cloudflare's shared egress IPs are permanently over that quota,
+// so OpenSky drops the connection (HTTP 522). Authenticated access is tied to the
+// account (~4000/day) and is served regardless of the caller IP. Set the worker
+// secrets OPENSKY_CLIENT_ID and OPENSKY_CLIENT_SECRET to enable it.
+const TOKEN_URL =
+  "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+
+// Cached per isolate; refreshed before expiry.
+let cachedToken = null; // { value: string, expiresAt: number(ms) }
+
+async function getAccessToken(env) {
+  if (!env || !env.OPENSKY_CLIENT_ID || !env.OPENSKY_CLIENT_SECRET) {
+    return null; // anonymous fallback
+  }
+  const now = Date.now();
+  if (cachedToken && cachedToken.expiresAt - 60_000 > now) {
+    return cachedToken.value;
+  }
+
+  const resp = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: env.OPENSKY_CLIENT_ID,
+      client_secret: env.OPENSKY_CLIENT_SECRET
+    })
+  });
+  if (!resp.ok) {
+    cachedToken = null;
+    return null; // fall back to anonymous on auth failure
+  }
+  const data = await resp.json();
+  cachedToken = {
+    value: data.access_token,
+    expiresAt: now + (typeof data.expires_in === "number" ? data.expires_in * 1000 : 1_800_000)
+  };
+  return cachedToken.value;
+}
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const origin = request.headers.get("Origin") ?? "";
     const cors = corsHeaders(origin);
 
@@ -58,11 +99,19 @@ export default {
       return new Response("Not Found", { status: 404, headers: cors });
     }
 
+    const headers = { Accept: "application/json" };
+    try {
+      const token = await getAccessToken(env);
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // token fetch failed; proceed anonymously
+    }
+
     let upstreamResponse;
     try {
-      upstreamResponse = await fetch(UPSTREAM + url.pathname + url.search, {
-        headers: { Accept: "application/json" }
-      });
+      upstreamResponse = await fetch(UPSTREAM + url.pathname + url.search, { headers });
     } catch {
       return new Response(JSON.stringify({ error: "upstream fetch failed" }), {
         status: 502,

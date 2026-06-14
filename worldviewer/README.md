@@ -31,18 +31,29 @@ This writes 256 JSON shards under `public/aircraft-identity/`, keyed by the firs
 
 ## Live aircraft (OpenSky proxy)
 
-OpenSky's anonymous API returns `Access-Control-Allow-Origin: https://opensky-network.org`, so a
-browser on any other origin (GitHub Pages, `localhost`) is **blocked by CORS** and live aircraft do
-not load. A tiny same-origin proxy fixes this: deploy `worker/opensky-proxy.js` (a stateless
-Cloudflare Worker — paste-and-deploy, no build) and build the site with its URL:
+Two OpenSky constraints make live aircraft impossible to fetch browser-direct:
+1. **CORS** — OpenSky returns `Access-Control-Allow-Origin: https://opensky-network.org`, so a browser
+   on any other origin (GitHub Pages, `localhost`) is blocked.
+2. **Per-IP anonymous rate limit** — anonymous access is ~400 req/day per IP; shared datacenter IPs
+   (e.g. a serverless proxy's egress) are permanently over quota, so OpenSky drops the connection (522).
+
+Fix: deploy `worker/opensky-proxy.js` (a stateless Cloudflare Worker — paste-and-deploy, no build) and
+give it OpenSky **OAuth2 client credentials** so its requests are authenticated (account-based ~4000/day,
+served regardless of egress IP):
+
+1. OpenSky account → **Account → API clients** → create a client → copy the `client_id`/`client_secret`.
+2. In the Worker → **Settings → Variables and Secrets**, add secrets `OPENSKY_CLIENT_ID` and
+   `OPENSKY_CLIENT_SECRET`, then redeploy. (Without them the worker falls back to anonymous, which 522s
+   from datacenter IPs.)
+3. Build the site pointed at the worker:
 
 ```powershell
-$env:VITE_OPENSKY_BASE = "https://worldviewer-opensky.<account>.workers.dev"; npm run build
+$env:VITE_OPENSKY_BASE = "https://worldviewer-opensky.<subdomain>.workers.dev"; npm run build
 ```
 
-The client routes both OpenSky endpoints (`/api/states/all`, `/api/routes`) through this base. If
-`VITE_OPENSKY_BASE` is unset it falls back to OpenSky directly (which only works when served from
-opensky-network.org). The CSP already allows `https://*.workers.dev`.
+The client routes both OpenSky endpoints (`/api/states/all`, `/api/routes`) through this base; if
+`VITE_OPENSKY_BASE` is unset it falls back to OpenSky directly. The CSP already allows
+`https://*.workers.dev`.
 
 ## Stack
 
