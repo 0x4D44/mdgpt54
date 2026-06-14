@@ -7,6 +7,11 @@
       content="width=device-width, initial-scale=1.0"
     />
     <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; child-src 'self' blob:; img-src 'self' data: blob: https://tiles.openfreemap.org https://tiles.maps.eox.at https://*.rainviewer.com https://elevation-tiles-prod.s3.amazonaws.com; connect-src 'self' blob: https://tiles.openfreemap.org https://tiles.maps.eox.at https://*.rainviewer.com https://api.rainviewer.com https://elevation-tiles-prod.s3.amazonaws.com https://nominatim.openstreetmap.org https://earthquake.usgs.gov https://api.wheretheiss.at https://opensky-network.org; font-src 'self' data:; object-src 'none'; base-uri 'self'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta
       name="description"
       content="A browser-based Earth twin that moves from orbit to city streets with open map layers, terrain, and 3D buildings."
     />
