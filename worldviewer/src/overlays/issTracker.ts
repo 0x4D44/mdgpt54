@@ -1,5 +1,6 @@
 import type { Map, CircleLayerSpecification, LineLayerSpecification } from "maplibre-gl";
 
+import { isAbortError, isObject } from "../guards";
 import {
   findFirstLabelLayerId,
   findFirstRoadLayerId,
@@ -412,10 +413,3 @@ function hasSetData(source: unknown): source is GeoJsonSourceLike {
   return typeof source === "object" && source !== null && "setData" in source;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
-}

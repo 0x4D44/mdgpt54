@@ -1,5 +1,6 @@
 import type { Map, RasterLayerSpecification } from "maplibre-gl";
 
+import { isAbortError, isObject } from "../guards";
 import {
   findFirstLabelLayerId,
   findFirstNonBaseContentLayerId,
@@ -415,10 +416,3 @@ function normalizeRainViewerPath(path: unknown): string | null {
   return trimmedPath.startsWith("/") ? trimmedPath : `/${trimmedPath}`;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
-}

@@ -1,6 +1,7 @@
 import type { Map, CircleLayerSpecification } from "maplibre-gl";
 import { Popup } from "maplibre-gl";
 import { escapeHtml } from "../escapeHtml";
+import { isAbortError, isObject } from "../guards";
 
 import {
   findFirstLabelLayerId,
@@ -446,14 +447,6 @@ function createEarthquakeLayer(): CircleLayerSpecification {
 
 function hasSetData(source: unknown): source is GeoJsonSourceLike {
   return typeof source === "object" && source !== null && "setData" in source;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
 // Re-export for use by maplibre event handler type
