@@ -553,6 +553,51 @@ describe("aircraft3dLayerTestUtils", () => {
     expect(secondInstance?.userData.aircraftClassKey).toBe("wide-body");
   });
 
+  it("disposes cloned tint materials but not shared geometry when an aircraft goes stale", () => {
+    const prototypes = aircraft3dLayerTestUtils.createAircraftMeshPrototypes(THREE);
+    const scene = new THREE.Scene();
+    const objects = new Map<string, THREE.Group>();
+    const track: RenderableAircraft3dTrack = {
+      id: "leaky",
+      lng: 0,
+      lat: 0,
+      heading: 0,
+      altitudeMeters: 10000,
+      classKey: "narrow-body"
+    };
+
+    aircraft3dLayerTestUtils.syncAircraftObjects(scene, objects, prototypes, [track]);
+    const obj = objects.get(track.id)!;
+
+    // Force per-object material clones.
+    aircraft3dLayerTestUtils.applyAltitudeTint(THREE, obj, 10000);
+    expect(obj.userData.materialsCloned).toBe(true);
+
+    const materialDisposeSpies: Array<ReturnType<typeof vi.spyOn>> = [];
+    obj.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.material instanceof THREE.Material) {
+        materialDisposeSpies.push(vi.spyOn(mesh.material, "dispose"));
+      }
+    });
+    expect(materialDisposeSpies.length).toBeGreaterThan(0);
+
+    // Geometry is shared with the prototype and must never be disposed here.
+    const protoGeomDispose = vi.fn();
+    prototypes["narrow-body"].traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.geometry instanceof THREE.BufferGeometry) {
+        vi.spyOn(mesh.geometry, "dispose").mockImplementation(protoGeomDispose);
+      }
+    });
+
+    // Aircraft drops out of the snapshot.
+    aircraft3dLayerTestUtils.syncAircraftObjects(scene, objects, prototypes, []);
+
+    expect(materialDisposeSpies.every((spy) => spy.mock.calls.length === 1)).toBe(true);
+    expect(protoGeomDispose).not.toHaveBeenCalled();
+  });
+
   it("maps local forward movement onto the requested world heading", () => {
     const matrix = new THREE.Matrix4();
     const track: RenderableAircraft3dTrack = {

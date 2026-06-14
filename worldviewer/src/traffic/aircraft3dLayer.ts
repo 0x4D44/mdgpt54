@@ -226,6 +226,7 @@ class Aircraft3dRuntimeLayer implements CustomLayerInterface {
 
   dispose(): void {
     for (const object of this.objects.values()) {
+      disposeClonedAircraftMaterials(object);
       this.scene.remove(object);
     }
     this.objects.clear();
@@ -252,11 +253,14 @@ function syncAircraftObjects(
     }
 
     if (current) {
+      disposeClonedAircraftMaterials(current);
       scene.remove(current);
       objects.delete(track.id);
     }
 
-    // three.js Mesh.copy shares geometry/material references here, so stale clones only need scene removal.
+    // Mesh.clone reference-copies geometry/material from the prototype, but
+    // applyAltitudeTint later swaps in per-object material clones — those must be
+    // disposed on removal (see disposeClonedAircraftMaterials); geometry stays shared.
     const instance = prototypes[track.classKey].clone(true);
     instance.name = track.id;
     instance.matrixAutoUpdate = false;
@@ -273,6 +277,7 @@ function syncAircraftObjects(
       continue;
     }
 
+    disposeClonedAircraftMaterials(object);
     scene.remove(object);
     staleIds.push(id);
   }
@@ -529,6 +534,29 @@ function applyAltitudeTint(THREE: ThreeModule, object: import("three").Group, al
   if (needsClone) {
     object.userData[MATERIALS_CLONED_USER_DATA] = true;
   }
+}
+
+/**
+ * Dispose the per-object material clones created by applyAltitudeTint. Geometry
+ * is shared with the prototype (Mesh.clone reference-copies it and it is never
+ * reassigned), so it must NOT be disposed here. Idempotent: clears the flag.
+ */
+function disposeClonedAircraftMaterials(object: import("three").Object3D): void {
+  if (!object.userData[MATERIALS_CLONED_USER_DATA]) {
+    return;
+  }
+
+  object.traverse((child: import("three").Object3D) => {
+    const mesh = child as import("three").Mesh;
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      material.forEach((m) => m?.dispose?.());
+    } else {
+      material?.dispose?.();
+    }
+  });
+
+  object.userData[MATERIALS_CLONED_USER_DATA] = false;
 }
 
 function darkenColor(hexColor: string, factor: number): string {
