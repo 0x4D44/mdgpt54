@@ -1,3 +1,5 @@
+import type { ExpressionSpecification } from "maplibre-gl";
+
 import type { Bbox, LiveTrack, SnapshotMessage } from "./trafficTypes";
 import { formatAircraftModelDescription } from "./aircraftIdentityData";
 
@@ -292,7 +294,7 @@ export const ALTITUDE_COLOR_STOPS: ReadonlyArray<{ altitude: number; color: stri
  * Returns a MapLibre interpolate expression that colors aircraft icons by altitude band.
  * Uses coalesce to prefer geoAltitudeMeters over altitudeMeters, falling back to 0.
  */
-export function altitudeColorExpression(): unknown[] {
+export function altitudeColorExpression(): ExpressionSpecification {
   return [
     "interpolate",
     ["linear"],

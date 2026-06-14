@@ -107,8 +107,8 @@ export function addTrafficLayers(map: Map): void {
     },
     paint: {
       "line-color": "#67d0ff",
-      "line-opacity": ["coalesce", ["get", "opacity"], 0.4] as any,
-      "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.8, 12, 2.0] as any
+      "line-opacity": ["coalesce", ["get", "opacity"], 0.4],
+      "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.8, 12, 2.0]
     }
   });
 
@@ -155,7 +155,7 @@ export function addTrafficLayers(map: Map): void {
       "icon-keep-upright": false
     },
     paint: {
-      "icon-color": altitudeColorExpression() as any,
+      "icon-color": altitudeColorExpression(),
       "icon-opacity": ["coalesce", ["get", "opacity"], 1]
     }
   });
