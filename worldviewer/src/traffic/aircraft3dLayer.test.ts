@@ -107,6 +107,63 @@ describe("Aircraft3dController", () => {
     controller.dispose();
   });
 
+  it("stops querying map bounds on move after aircraft are toggled off (zoomed in)", async () => {
+    const frameQueue: Array<(time: number) => void> = [];
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: (time: number) => void) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+
+    // Zoomed-in/pitched camera so 3D mode genuinely activates.
+    const map = makeMap({ zoom: 14, pitch: 50 });
+    const controller = new Aircraft3dController(map as any, vi.fn(), vi.fn(async () => THREE));
+
+    // Toggle ON: an eligible track promotes the controller to enabled=true.
+    controller.setTracks([makeTrack({ id: "on", geoAltitudeMeters: 10400 })]);
+    await flushAllFrames(frameQueue);
+    expect([...controller.getHiddenTrackIds()]).toContain("on");
+
+    // Toggle OFF feeds an empty snapshot.
+    controller.setTracks([]);
+    await flushAllFrames(frameQueue);
+
+    // Subsequent map interaction must not do per-frame bounds/filter work.
+    map.getBounds.mockClear();
+    for (let i = 0; i < 5; i++) {
+      map.listeners.get("move")?.();
+    }
+    await flushAllFrames(frameQueue);
+
+    expect(map.getBounds).not.toHaveBeenCalled();
+    expect([...controller.getHiddenTrackIds()]).toEqual([]);
+
+    controller.dispose();
+  });
+
+  it("still queries bounds on move while aircraft are active", async () => {
+    const frameQueue: Array<(time: number) => void> = [];
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: (time: number) => void) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+
+    const map = makeMap({ zoom: 14, pitch: 50 });
+    const controller = new Aircraft3dController(map as any, vi.fn(), vi.fn(async () => THREE));
+
+    controller.setTracks([makeTrack({ id: "live", geoAltitudeMeters: 10400 })]);
+    await flushAllFrames(frameQueue);
+
+    map.getBounds.mockClear();
+    map.listeners.get("move")?.();
+    await flushAllFrames(frameQueue);
+
+    expect(map.getBounds).toHaveBeenCalled();
+
+    controller.dispose();
+  });
+
   it("loads the 3D layer and hides matching 2D aircraft once the success path completes", async () => {
     const frameQueue: Array<(time: number) => void> = [];
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: (time: number) => void) => {

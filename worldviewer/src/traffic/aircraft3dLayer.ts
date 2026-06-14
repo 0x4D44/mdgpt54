@@ -93,6 +93,20 @@ export class Aircraft3dController {
       return;
     }
 
+    // With no tracks (e.g. aircraft toggled off) there is nothing to render.
+    // Do the cheap teardown once, then skip the per-frame bounds query / filter
+    // / mode work on subsequent move frames. Keyed on track count, not the 3D
+    // `enabled` mode flag — `enabled` stays true after toggle-off while the
+    // camera is still zoomed in, so it cannot gate this hot path on its own.
+    if (this.latestTracks.length === 0) {
+      if (this.enabled || this.hiddenTrackIds.size > 0) {
+        this.enabled = false;
+        this.layer?.setTracks([]);
+        this.updateHiddenTrackIds(EMPTY_HIDDEN_IDS);
+      }
+      return;
+    }
+
     const zoom = this.map.getZoom();
     const renderableTracks = buildRenderableAircraft3dTracks(this.latestTracks, bboxFromBounds(this.map.getBounds()));
     const handoffTracks = filterAircraft3dHandoffTracksWithHysteresis(
