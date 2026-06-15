@@ -205,7 +205,7 @@ describe("addTrafficLayers", () => {
     expect(shipPopup?.removed).toBe(true);
   });
 
-  it("adds 4 sources and 9 layers on fresh setup", async () => {
+  it("adds 4 sources and 7 layers on fresh setup", async () => {
     vi.resetModules();
     const { addTrafficLayers } = await import("./trafficLayers");
     const map = makeMap();
@@ -217,7 +217,22 @@ describe("addTrafficLayers", () => {
     expect(map.addSource.mock.calls[1][0]).toBe("live-ships");
     expect(map.addSource.mock.calls[2][0]).toBe("aircraft-trails");
     expect(map.addSource.mock.calls[3][0]).toBe("flight-route");
-    expect(map.addLayer).toHaveBeenCalledTimes(9);
+    // 7 layers: trail, aircraft, ships cluster + count, ships wake, ships, flight route.
+    // (No aircraft cluster layers — aircraft are never clustered.)
+    expect(map.addLayer).toHaveBeenCalledTimes(7);
+  });
+
+  it("creates the aircraft source without clustering but keeps ships clustered", async () => {
+    vi.resetModules();
+    const { addTrafficLayers } = await import("./trafficLayers");
+    const map = makeMap();
+
+    addTrafficLayers(map as any);
+
+    const aircraftSource = map.addSource.mock.calls.find((call: any[]) => call[0] === "live-aircraft")?.[1];
+    const shipsSource = map.addSource.mock.calls.find((call: any[]) => call[0] === "live-ships")?.[1];
+    expect(aircraftSource.cluster).toBe(false);
+    expect(shipsSource.cluster).toBe(true);
   });
 
   it("skips already-loaded aircraft images", async () => {

@@ -20,12 +20,12 @@ describe("resolveLocalTrafficStatus", () => {
     expect(
       resolveLocalTrafficStatus(
         { aircraftEnabled: true, shipsEnabled: true },
-        4.5,
+        2.5,
         "localhost"
       )
     ).toEqual({
-      aircraft: { code: "zoom_in", message: "Zoom in past 5 to activate live traffic." },
-      ships: { code: "zoom_in", message: "Zoom in past 5 to activate live traffic." }
+      aircraft: { code: "zoom_in", message: "Zoom in past 3 to activate live traffic." },
+      ships: { code: "zoom_in", message: "Zoom in past 3 to activate live traffic." }
     });
   });
 

@@ -43,6 +43,7 @@ import {
   updateTrailData
 } from "./traffic/trafficLayers";
 import { createTrailStore } from "./traffic/aircraftTrails";
+import { extrapolateTracks, MAX_EXTRAPOLATION_MS } from "./traffic/aircraftAnimator";
 import {
   createTrafficUI,
   updateLayerAvailability,
@@ -910,6 +911,47 @@ function wireTraffic(mapInstance: Map): void {
     return aircraft3d;
   };
 
+  // Smooth-glide animation loop: between 15s polls we dead-reckon each aircraft
+  // forward from its last fix so icons glide instead of jumping. Throttled to
+  // ~80ms and only runs while aircraft are enabled and present.
+  const ANIMATION_FRAME_MS = 80;
+  let animationHandle = 0;
+  let lastFrameTime = 0;
+
+  const animationActive = () =>
+    client.state.aircraftEnabled && latestSnapshot.aircraft.length > 0;
+
+  const animationTick = (timestamp: number) => {
+    animationHandle = requestAnimationFrame(animationTick);
+
+    if (!animationActive() || timestamp - lastFrameTime < ANIMATION_FRAME_MS) {
+      return;
+    }
+    lastFrameTime = timestamp;
+
+    if (!mapInstance.getSource("live-aircraft")) {
+      return;
+    }
+
+    const animated = extrapolateTracks(latestSnapshot.aircraft, Date.now(), MAX_EXTRAPOLATION_MS);
+    updateTrafficData(mapInstance, { ...latestSnapshot, aircraft: animated }, aircraft3d?.getHiddenTrackIds());
+    aircraft3d?.setTracks(animated);
+  };
+
+  const startAnimationLoop = () => {
+    if (typeof requestAnimationFrame === "undefined" || animationHandle !== 0) {
+      return;
+    }
+    animationHandle = requestAnimationFrame(animationTick);
+  };
+
+  const stopAnimationLoop = () => {
+    if (animationHandle !== 0 && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(animationHandle);
+    }
+    animationHandle = 0;
+  };
+
   const syncUI = () => {
     updateTrafficStatus(ui, connectionStatus, client.state.aircraftEnabled, client.state.shipsEnabled);
     updateTrafficCredit(ui, client.state.aircraftEnabled, client.state.shipsEnabled);
@@ -933,6 +975,12 @@ function wireTraffic(mapInstance: Map): void {
       trailStore.update(snapshot.aircraft, now);
       updateTrailData(mapInstance, trailStore.toGeoJSON(now));
       updateTrafficData(mapInstance, snapshot, aircraft3d?.getHiddenTrackIds());
+      // Kick off the smooth-glide loop once we have aircraft to animate; it
+      // self-gates per frame and the per-snapshot calls above ensure an
+      // immediate render even before the first animated frame fires.
+      if (animationActive()) {
+        startAnimationLoop();
+      }
       updateLayerAvailability(ui, snapshot.status);
       updateLayerStatusHints(
         ui,
@@ -954,7 +1002,10 @@ function wireTraffic(mapInstance: Map): void {
       client.state.aircraftEnabled = !client.state.aircraftEnabled;
       ui.aircraftToggle.classList.toggle("is-active", client.state.aircraftEnabled);
       ui.aircraftToggle.setAttribute("aria-pressed", String(client.state.aircraftEnabled));
-      if (!client.state.aircraftEnabled) {
+      if (client.state.aircraftEnabled) {
+        startAnimationLoop();
+      } else {
+        stopAnimationLoop();
         aircraft3d?.setTracks([]);
         trailStore.clear();
         clearAircraftData(mapInstance);

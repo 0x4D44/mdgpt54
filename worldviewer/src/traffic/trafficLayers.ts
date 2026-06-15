@@ -38,8 +38,6 @@ export const AIRCRAFT_TRAILS_SOURCE = "aircraft-trails";
 
 const AIRCRAFT_TRAIL_LAYER = "aircraft-trail-lines";
 const AIRCRAFT_LAYER = "live-aircraft-points";
-const AIRCRAFT_CLUSTER_LAYER = "live-aircraft-clusters";
-const AIRCRAFT_CLUSTER_COUNT = "live-aircraft-cluster-count";
 const SHIPS_WAKE_LAYER = "live-ships-wake";
 const SHIPS_LAYER = "live-ships-points";
 const SHIPS_CLUSTER_LAYER = "live-ships-clusters";
@@ -72,12 +70,12 @@ let routeAbortController: AbortController | null = null;
 
 /** Add GeoJSON sources and layers for live traffic to the map. */
 export function addTrafficLayers(map: Map): void {
+  // Aircraft are never clustered: individual icons render at every zoom so the
+  // smooth-glide animation has a per-aircraft target. Ships stay clustered.
   map.addSource(AIRCRAFT_SOURCE, {
     type: "geojson",
     data: EMPTY_FC,
-    cluster: true,
-    clusterRadius: CLUSTER_RADIUS,
-    clusterMaxZoom: CLUSTER_MAX_ZOOM
+    cluster: false
   });
 
   map.addSource(SHIPS_SOURCE, {
@@ -113,37 +111,9 @@ export function addTrafficLayers(map: Map): void {
   });
 
   map.addLayer({
-    id: AIRCRAFT_CLUSTER_LAYER,
-    type: "circle",
-    source: AIRCRAFT_SOURCE,
-    filter: ["has", "point_count"],
-    paint: {
-      "circle-color": "#67d0ff",
-      "circle-opacity": 0.75,
-      "circle-radius": ["step", ["get", "point_count"], 14, 10, 18, 50, 24]
-    }
-  });
-
-  map.addLayer({
-    id: AIRCRAFT_CLUSTER_COUNT,
-    type: "symbol",
-    source: AIRCRAFT_SOURCE,
-    filter: ["has", "point_count"],
-    layout: {
-      "text-field": "{point_count_abbreviated}",
-      "text-font": ["Noto Sans Regular"],
-      "text-size": 11
-    },
-    paint: {
-      "text-color": "#ffffff"
-    }
-  });
-
-  map.addLayer({
     id: AIRCRAFT_LAYER,
     type: "symbol",
     source: AIRCRAFT_SOURCE,
-    filter: ["!", ["has", "point_count"]],
     layout: {
       "icon-image": aircraftIconExpression(),
       "icon-size": aircraftIconSizeExpression(),

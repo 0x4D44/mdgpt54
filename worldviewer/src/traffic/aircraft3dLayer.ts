@@ -189,6 +189,11 @@ class Aircraft3dRuntimeLayer implements CustomLayerInterface {
   private readonly objects = new Map<string, import("three").Group>();
   private renderer: import("three").WebGLRenderer | null = null;
   private tracks: RenderableAircraft3dTrack[] = [];
+  // Spin animation state: accumulated rotation angles (radians) advanced by the
+  // wall-clock delta between repaints.
+  private spinPropAngle = 0;
+  private spinRotorAngle = 0;
+  private spinLastTime = 0;
 
   constructor(map: MapLibreMap, THREE: ThreeModule) {
     this.map = map;
@@ -220,6 +225,8 @@ class Aircraft3dRuntimeLayer implements CustomLayerInterface {
     this.camera.projectionMatrix.fromArray(defaultProjectionData.mainMatrix as ArrayLike<number>);
     this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
 
+    this.advanceSpin();
+
     for (const track of this.tracks) {
       const object = this.objects.get(track.id);
       if (!object) {
@@ -227,6 +234,7 @@ class Aircraft3dRuntimeLayer implements CustomLayerInterface {
       }
 
       object.visible = true;
+      this.spinAircraftParts(object);
       applyAircraftModelMatrix(this.THREE, object.matrix, track);
       applyAltitudeTint(this.THREE, object, track.altitudeMeters);
       object.matrixWorldNeedsUpdate = true;
@@ -234,6 +242,41 @@ class Aircraft3dRuntimeLayer implements CustomLayerInterface {
 
     this.renderer.resetState();
     this.renderer.render(this.scene, this.camera);
+
+    // Keep repainting while objects exist so props/rotors keep spinning. This
+    // only runs in 3D mode, so the loop is bounded by the 3D-handoff zoom band.
+    if (this.objects.size > 0) {
+      this.map.triggerRepaint();
+    }
+  }
+
+  /** Advance the accumulated prop/rotor spin angles by the wall-clock delta. */
+  private advanceSpin(): void {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const deltaSeconds = this.spinLastTime === 0 ? 0 : Math.max(0, (now - this.spinLastTime) / 1000);
+    this.spinLastTime = now;
+
+    const TWO_PI = Math.PI * 2;
+    this.spinPropAngle = (this.spinPropAngle + 8 * Math.PI * deltaSeconds) % TWO_PI;
+    this.spinRotorAngle = (this.spinRotorAngle + 6 * Math.PI * deltaSeconds) % TWO_PI;
+  }
+
+  /** Rotate an aircraft object's propeller (Y axis) and rotor blades (Z axis). */
+  private spinAircraftParts(object: import("three").Group): void {
+    const propeller = object.getObjectByName("propeller");
+    if (propeller) {
+      propeller.rotation.y = this.spinPropAngle;
+    }
+
+    const rotor = object.getObjectByName("rotor");
+    if (rotor) {
+      rotor.rotation.z = this.spinRotorAngle;
+    }
+
+    const rotorCross = object.getObjectByName("rotorCross");
+    if (rotorCross) {
+      rotorCross.rotation.z = this.spinRotorAngle;
+    }
   }
 
   setTracks(tracks: RenderableAircraft3dTrack[]): void {
@@ -427,6 +470,7 @@ function createPropMesh(THREE: ThreeModule): import("three").Group {
     roughness: 0.58
   });
   const propeller = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.22, 0.14), propMaterial);
+  propeller.name = "propeller";
   propeller.position.set(0, 9.7, 0);
   group.add(propeller);
   return group;
@@ -466,10 +510,12 @@ function createHelicopterMesh(THREE: ThreeModule): import("three").Group {
   group.add(skidStrutsRight);
 
   const rotor = new THREE.Mesh(new THREE.BoxGeometry(16, 0.18, 0.24), detailMaterial);
+  rotor.name = "rotor";
   rotor.position.set(0, 1.6, 2.4);
   group.add(rotor);
 
   const rotorCross = new THREE.Mesh(new THREE.BoxGeometry(0.24, 16, 0.18), detailMaterial);
+  rotorCross.name = "rotorCross";
   rotorCross.position.copy(rotor.position);
   group.add(rotorCross);
 

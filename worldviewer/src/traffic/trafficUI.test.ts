@@ -81,9 +81,9 @@ describe("buildLayerStatusHints", () => {
       makeStatus("zoom_in", "zoom_in"),
       true,
       true,
-      "Zoom in past 5 to activate live traffic."
+      "Zoom in past 3 to activate live traffic."
     );
-    expect(hints).toEqual(["Zoom in past 5 to activate live traffic."]);
+    expect(hints).toEqual(["Zoom in past 3 to activate live traffic."]);
   });
 
   it("keeps unavailable hints alongside a local zoom hint", () => {
@@ -91,9 +91,9 @@ describe("buildLayerStatusHints", () => {
       makeStatus("zoom_in", "unavailable"),
       true,
       true,
-      "Zoom in past 5 to activate live traffic."
+      "Zoom in past 3 to activate live traffic."
     );
-    expect(hints).toEqual(["Zoom in past 5 to activate live traffic.", "Ships unavailable"]);
+    expect(hints).toEqual(["Zoom in past 3 to activate live traffic.", "Ships unavailable"]);
   });
 });
 

@@ -423,14 +423,14 @@ describe("getTrafficClientHint", () => {
 
   it("returns a hint below the minimum zoom when traffic is enabled", () => {
     expect(getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: false }, MIN_LIVE_TRAFFIC_ZOOM - 0.5, "localhost")).toBe(
-      "Zoom in past 5 to activate live traffic."
+      "Zoom in past 3 to activate live traffic."
     );
   });
 
   it("returns the same zoom hint on static hosts because aircraft traffic stays browser-side", () => {
     expect(
       getTrafficClientHint({ aircraftEnabled: true, shipsEnabled: true }, MIN_LIVE_TRAFFIC_ZOOM - 0.5, "0x4d44.github.io")
-    ).toBe("Zoom in past 5 to activate live traffic.");
+    ).toBe("Zoom in past 3 to activate live traffic.");
   });
 });
 

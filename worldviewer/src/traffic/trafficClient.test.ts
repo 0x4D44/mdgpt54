@@ -542,7 +542,7 @@ describe("TrafficClient", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const mapStub = createMapStub();
-    mapStub.getZoom = () => 3; // below MIN_LIVE_TRAFFIC_ZOOM
+    mapStub.getZoom = () => 2; // below MIN_LIVE_TRAFFIC_ZOOM
 
     const statuses: string[] = [];
     const client = new TrafficClient(mapStub as never, {
@@ -859,7 +859,7 @@ describe("TrafficClient", () => {
 
   it("does not open ship relay when zoom is below minimum", () => {
     const mapStub = createMapStub();
-    mapStub.getZoom = () => 3;
+    mapStub.getZoom = () => 2;
 
     const client = new TrafficClient(mapStub as never, {
       onSnapshot: vi.fn(),
@@ -888,7 +888,7 @@ describe("TrafficClient", () => {
 
   it("getClientHint returns hint when zoom is below minimum", () => {
     const mapStub = createMapStub();
-    mapStub.getZoom = () => 3;
+    mapStub.getZoom = () => 2;
 
     const client = new TrafficClient(mapStub as never, {
       onSnapshot: vi.fn(),
@@ -1216,7 +1216,7 @@ describe("TrafficClient", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    let currentZoom = 3;
+    let currentZoom = 2;
     const mapStub = {
       getZoom: () => currentZoom,
       getBounds: () => ({
@@ -1430,7 +1430,7 @@ describe("TrafficClient", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const mapStub = {
-      getZoom: () => 3,
+      getZoom: () => 2,
       getBounds: () => ({
         getWest: () => -180,
         getSouth: () => -90,

@@ -5,7 +5,9 @@ import { formatAircraftModelDescription } from "./aircraftIdentityData";
 
 /** Stale threshold in milliseconds — tracks older than this get faded. */
 export const STALE_THRESHOLD_MS = 60_000;
-export const MIN_LIVE_TRAFFIC_ZOOM = 5;
+// airplanes.live caps the query at a 250nm radius, so at very low zoom only a
+// patch of aircraft around the map centre appears — that's expected.
+export const MIN_LIVE_TRAFFIC_ZOOM = 3;
 const FLIGHT_CODE_CALLSIGN_RE = /^([A-Z]{3})(\d{1,4}[A-Z]?)$/;
 const EMPTY_TRACK_ID_SET = new Set<string>();
 const AIRCRAFT_CATEGORY_LABELS: Record<number, string> = {
